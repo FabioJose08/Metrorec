@@ -1,9 +1,10 @@
 import os
+import math
 import tkinter as tk
 import webbrowser
 from urllib.parse import quote
 from tkinter import ttk, messagebox
-from PIL import Image, ImageTk
+import tkintermapview
 
 from dados import LINHAS, STATUS_DISPONIVEIS
 from simulacao import SimulacaoTrens
@@ -11,87 +12,103 @@ from viagens import calcular_rota_na_linha, montar_rota_integrada, proximo_horar
 from utilitarios import formatar_reais, horario_atual, data_atual, minutos_para_texto
 
 
+# Paleta de Cores do Sistema
 C = {
-    "fundo": "#eef2f6", "topo": "#15283f", "texto": "#172b40", "sec": "#667587",
-    "card": "white", "borda": "#d9e1ea", "botao": "#071b2f", "hover": "#0d4d76", "mapa": "#f8fafc",
-    "verde": "#198754", "amarelo": "#b77900", "laranja": "#d97706", "vermelho": "#c0392b",
+    "fundo": "#F4F6F9",
+    "topo": "#0F172A",
+    "texto": "#1E293B",
+    "sec": "#64748B",
+    "card": "#FFFFFF",
+    "borda": "#E2E8F0",
+    "botao": "#0F172A",
+    "hover": "#1E293B",
+    "verde": "#10B981",
+    "amarelo": "#F59E0B",
+    "laranja": "#F97316",
+    "vermelho": "#EF4444",
 }
-CORES_LINHAS = {"Jaboatão": "#d81010", "Camaragibe": "#e67f18", "Sul": "#0b1aec"}
 
-# Posições calibradas para a imagem geográfica do OpenStreetMap (1000x500 base)
-POSICOES = {
-    # Linha Camaragibe (Laranja)
-    "Camaragibe": (420, 105),
-    "Cosme e Damião": (405, 185),
-    "Rodoviária": (408, 230),
-    "Curado": (485, 345),
-    "Alto do Céu": (502, 360),
-    "Coqueiral": (538, 382),
-    
-    # Trecho Compartilhado (Linha Centro -> Recife)
-    "Tejipió": (565, 385),
-    "Barro": (605, 395),
-    "Werneck": (645, 385),
-    "Santa Luzia": (685, 372),
-    "Mangueira": (722, 365),
-    "Ipiranga": (745, 355),
-    "Afogados": (770, 345),
-    "Joana Bezerra": (785, 332),
-    "Recife": (810, 310),
+# Cores das Linhas do Metrorec
+CORES_LINHAS = {
+    "Jaboatão": "#DC2626",    # Vermelho
+    "Camaragibe": "#EA580C",  # Laranja
+    "Sul": "#2563EB"          # Azul
+}
 
-    # Linha Jaboatão (Vermelha - Ramo Sudoeste)
-    "Jaboatão": (365, 560),
-    "Engenho Velho": (410, 535),
-    "Floriano": (445, 500),
-    "Cavaleiro": (495, 455),
+# Coordenadas Reais de Latitude e Longitude de Cada Estação
+COORDENADAS_ESTACOES = {
+    # Linha Camaragibe
+    "Camaragibe": (-8.0211, -34.9818),
+    "Cosme e Damião": (-8.0322, -34.9669),
+    "Rodoviária": (-8.0428, -34.9582),
+    "Curado": (-8.0673, -34.9721),
+    "Alto do Céu": (-8.0776, -34.9625),
+    "Coqueiral": (-8.0837, -34.9542),
 
-    # Linha Sul (Azul - Corredor Sul)
-    "Largo da Paz": (760, 375),
-    "Imbiribeira": (740, 485),
-    "Antônio Falcão": (720, 570),
-    "Shopping": (712, 615),
-    "Tancredo Neves": (705, 665),
-    "Aeroporto": (698, 715),
-    "Porta Larga": (692, 760),
-    "Monte dos Guararapes": (685, 805),
-    "Prazeres": (675, 845),
-    "Cajueiro Seco": (660, 890)
+    # Linha Jaboatão
+    "Jaboatão": (-8.1132, -35.0152),
+    "Engenho Velho": (-8.1068, -35.0035),
+    "Floriano": (-8.1009, -34.9904),
+    "Cavaleiro": (-8.0932, -34.9687),
+
+    # Tronco Comum (Centro)
+    "Tejipió": (-8.0858, -34.9458),
+    "Barro": (-8.0812, -34.9351),
+    "Werneck": (-8.0782, -34.9221),
+    "Santa Luzia": (-8.0772, -34.9123),
+    "Mangueira": (-8.0771, -34.9031),
+    "Ipiranga": (-8.0768, -34.8953),
+    "Afogados": (-8.0735, -34.8872),
+    "Joana Bezerra": (-8.0701, -34.8805),
+    "Recife": (-8.0671, -34.8722),
+
+    # Linha Sul
+    "Largo da Paz": (-8.0815, -34.8885),
+    "Imbiribeira": (-8.0941, -34.8942),
+    "Antônio Falcão": (-8.1022, -34.8988),
+    "Shopping": (-8.1132, -34.9035),
+    "Tancredo Neves": (-8.1221, -34.9068),
+    "Aeroporto": (-8.1332, -34.9112),
+    "Porta Larga": (-8.1435, -34.9162),
+    "Monte dos Guararapes": (-8.1541, -34.9198),
+    "Prazeres": (-8.1638, -34.9232),
+    "Cajueiro Seco": (-8.1752, -34.9281)
 }
 
 
 class MetroRecApp:
     def __init__(self, root):
-        self.root, self.linhas = root, LINHAS
+        self.root = root
+        self.linhas = LINHAS
         self.linha_atual = None
-        self.topo = self.conteudo = self.mapa_canvas = None
-        self.mapa_zoom, self.simulacao_timer_id = 1.0, None
+        self.topo = self.conteudo = None
+        
+        # Atributos do Mapa Real
+        self.map_widget = None
+        self.marcadores_trens = {}
+        self.simulacao_timer_id = None
         self.simulacao = SimulacaoTrens(self.linhas)
-        self.mapa_bg_img = None
+        self.anim_step = 0.0
+
         self._janela()
         self._estilos()
         self.tela_inicial()
 
     def _janela(self):
-        self.root.title("METROREC - Sistema de Informações e Planejamento")
-        self.root.geometry("1200x760")
-        self.root.minsize(1000, 650)
+        self.root.title("METROREC - Sistema de Mobilidade Integrado")
+        self.root.geometry("1280x820")
+        self.root.minsize(1024, 700)
         self.root.configure(bg=C["fundo"])
-        self.root.option_add("*Font", ("Segoe UI", 10))
 
     def _estilos(self):
         s = ttk.Style()
         s.theme_use("clam")
-        s.configure("Metro.TButton", font=("Segoe UI", 11, "bold"), padding=(16, 10),
-                    foreground="white", background=C["botao"], borderwidth=2, relief="raised")
-        s.map("Metro.TButton", background=[("active", C["hover"]), ("pressed", "#020710")])
-        s.configure("Metro.Nav.TButton", font=("Segoe UI", 10, "bold"), padding=(14, 8),
-                    foreground="white", background="#102b4f")
-        s.map("Metro.Nav.TButton", background=[("active", "#0b5a8a")])
-        s.configure("Metro.TCombobox", font=("Segoe UI", 11), padding=6,
-                    fieldbackground="white", foreground=C["texto"])
-        s.configure("Metro.TEntry", font=("Segoe UI", 11), padding=6)
-        s.configure("Treeview", font=("Segoe UI", 10), rowheight=34)
-        s.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"), padding=7)
+        s.configure("Metro.TButton", font=("Segoe UI", 10, "bold"), padding=(16, 9),
+                    foreground="white", background=C["botao"], borderwidth=0)
+        s.map("Metro.TButton", background=[("active", C["hover"])])
+        s.configure("Metro.Nav.TButton", font=("Segoe UI", 9, "bold"), padding=(12, 7),
+                    foreground="#334155", background="#E2E8F0")
+        s.map("Metro.Nav.TButton", background=[("active", "#CBD5E1")])
 
     def _limpar(self):
         self._cancelar_simulacao()
@@ -106,56 +123,58 @@ class MetroRecApp:
 
     def _card(self, parent, **kw):
         return tk.Frame(parent, bg=C["card"], bd=1, relief="solid",
-                        highlightthickness=1, highlightbackground=C["borda"], **kw)
+                        highlightthickness=0, highlightbackground=C["borda"], **kw)
 
     def _botao(self, parent, texto, comando, estilo="Metro.TButton", **kw):
         return ttk.Button(parent, text=texto, command=comando, style=estilo, **kw)
 
     def _cabecalho(self, titulo, subtitulo=""):
         self._limpar()
-        self.topo = tk.Frame(self.root, bg=C["topo"], height=88)
+        self.topo = tk.Frame(self.root, bg=C["topo"], height=80)
         self.topo.pack(fill="x")
         self.topo.pack_propagate(False)
+        
         esquerda = tk.Frame(self.topo, bg=C["topo"])
         esquerda.pack(side="left", padx=28, fill="y")
-        self._label(esquerda, "🚇 METROREC", 18, "white", "bold", C["topo"]).pack(anchor="w", pady=(12, 0))
-        self._label(esquerda, titulo, 10, "#bdc9d7", bg=C["topo"]).pack(anchor="w")
-        relogio = self._label(self.topo, "", 16, "white", "bold", C["topo"])
+        self._label(esquerda, "🚇 METROREC", 16, "white", "bold", C["topo"]).pack(anchor="w", pady=(14, 0))
+        self._label(esquerda, titulo, 9, "#94A3B8", bg=C["topo"]).pack(anchor="w")
+        
+        relogio = self._label(self.topo, "", 13, "#F1F5F9", "bold", C["topo"])
         relogio.pack(side="right", padx=28)
 
         def atualizar():
             if relogio.winfo_exists():
-                relogio.config(text=f"{horario_atual()}  |  {data_atual()}")
+                relogio.config(text=f"{horario_atual()}  •  {data_atual()}")
                 relogio.after(1000, atualizar)
         atualizar()
 
         self.conteudo = tk.Frame(self.root, bg=C["fundo"])
         self.conteudo.pack(fill="both", expand=True)
         area = tk.Frame(self.conteudo, bg=C["fundo"])
-        area.pack(fill="both", expand=True, padx=30, pady=25)
-        self._label(area, titulo, 26, C["texto"], "bold", C["fundo"]).pack(anchor="w")
+        area.pack(fill="both", expand=True, padx=32, pady=24)
+        
         if subtitulo:
-            self._label(area, subtitulo, 11, C["sec"], bg=C["fundo"]).pack(anchor="w", pady=(4, 20))
+            self._label(area, subtitulo, 11, C["sec"], bg=C["fundo"]).pack(anchor="w", pady=(0, 16))
         return area
 
     def _nav(self, parent):
         barra = tk.Frame(parent, bg=C["fundo"])
-        barra.pack(fill="x", pady=(0, 8))
+        barra.pack(fill="x", pady=(0, 16))
         botoes = [
             ("Início", self.tela_inicial),
+            ("Mapa Real Interativo", self.tela_mapa_rede),
             ("Dashboard", self.tela_dashboard),
             ("Linhas", self.tela_todas_linhas),
-            ("Mapa da Rede", self.tela_mapa_rede),
-            ("Planejar viagem", self.janela_planejamento_global)
+            ("Planejar Rota", self.janela_planejamento_global)
         ]
         for texto, comando in botoes:
-            self._botao(barra, texto, comando, "Metro.Nav.TButton").pack(side="left", padx=4)
+            self._botao(barra, texto, comando, "Metro.Nav.TButton").pack(side="left", padx=(0, 6))
 
     def _janela_nova(self, titulo, largura, altura):
         w = tk.Toplevel(self.root)
         w.title(f"METROREC - {titulo}")
         w.geometry(f"{largura}x{altura}")
-        w.minsize(max(450, largura - 80), max(350, altura - 100))
+        w.minsize(400, 300)
         w.configure(bg=C["fundo"])
         w.transient(self.root)
         w.grab_set()
@@ -163,26 +182,12 @@ class MetroRecApp:
 
     def _campo(self, parent, rotulo, valores, variavel=None):
         self._label(parent, rotulo, 10, C["texto"], "bold", "white").pack(anchor="w")
-        combo = ttk.Combobox(parent, values=valores, textvariable=variavel,
-                             state="readonly", style="Metro.TCombobox")
-        combo.pack(fill="x", pady=(5, 15))
+        combo = ttk.Combobox(parent, values=valores, textvariable=variavel, state="readonly")
+        combo.pack(fill="x", pady=(4, 12))
         return combo
 
-    def _campo_grid(self, parent, rotulo, variavel, valores, row, col):
-        padx = (0, 10) if col == 0 else (10, 0)
-        self._label(parent, rotulo, 10, C["texto"], "bold", "white").grid(
-            row=row, column=col, sticky="w", padx=padx, pady=6)
-        if valores is None:
-            item = ttk.Entry(parent, textvariable=variavel, style="Metro.TEntry")
-        else:
-            item = ttk.Combobox(parent, values=valores, textvariable=variavel,
-                                state="readonly", style="Metro.TCombobox")
-        item.grid(row=row + 1, column=col, sticky="ew", padx=padx, pady=(0, 15))
-        return item
-
     def _area_rolavel(self, parent):
-        box = tk.Frame(parent, bg="white", bd=1, relief="solid",
-                       highlightthickness=1, highlightbackground=C["borda"])
+        box = tk.Frame(parent, bg="white", bd=1, relief="solid", highlightbackground=C["borda"])
         canvas = tk.Canvas(box, bg="white", highlightthickness=0)
         barra = ttk.Scrollbar(box, orient="vertical", command=canvas.yview)
         area = tk.Frame(canvas, bg="white")
@@ -195,469 +200,346 @@ class MetroRecApp:
 
     def status_cor(self, status):
         return {
-            "Operação normal": C["verde"], "Atenção": C["amarelo"],
-            "Operação reduzida": C["laranja"], "Interrompida": C["vermelho"]
-        }.get(status, "#68737d")
+            "Operação normal": C["verde"],
+            "Atenção": C["amarelo"],
+            "Operação reduzida": C["laranja"],
+            "Interrompida": C["vermelho"]
+        }.get(status, C["sec"])
 
     def todas_estacoes(self):
         return sorted({e for l in self.linhas.values() for e in l["estacoes"]})
 
     def tela_inicial(self):
         self.linha_atual = None
-        area = self._cabecalho(
-            "Sistema de Informações do Metrô",
-            "Consulte linhas, horários, estações e planeje sua viagem")
+        area = self._cabecalho("Painel Geral", "Selecione uma linha ou acompanhe o mapa da rede")
         self._nav(area)
-        self._label(area, "Informações das linhas Jaboatão, Camaragibe e Sul.", 12, "#425466", bg=C["fundo"]).pack(
-            anchor="w", pady=(0, 18))
 
         cards = tk.Frame(area, bg=C["fundo"])
-        cards.pack(fill="x")
+        cards.pack(fill="x", pady=8)
 
         for nome, linha in self.linhas.items():
-            card = self._card(cards, width=330, height=250)
-            card.pack(side="left", fill="both", expand=True, padx=7)
+            card = self._card(cards, width=320, height=220)
+            card.pack(side="left", fill="both", expand=True, padx=6)
             card.pack_propagate(False)
-            tk.Frame(card, bg="#1f5fa8", height=8).pack(fill="x")
-            self._label(card, linha["codigo"], 11, C["sec"], "bold", "white").pack(anchor="w", padx=22, pady=(18, 0))
-            self._label(card, nome, 20, C["texto"], "bold", "white").pack(anchor="w", padx=22)
-            self._label(card, linha["status"], 10, self.status_cor(linha["status"]), "bold", "white").pack(
-                anchor="w", padx=22, pady=(5, 3))
-            self._label(card, f"{len(linha['estacoes'])} estações • {formatar_reais(linha['tarifa'])}",
-                        10, C["sec"], bg="white").pack(anchor="w", padx=22)
-            self._botao(card, "Acessar linha", lambda n=nome: self.tela_linha(n)).pack(
-                fill="x", padx=22, pady=(12, 18))
+            
+            tk.Frame(card, bg=CORES_LINHAS.get(nome, C["botao"]), height=6).pack(fill="x")
+            self._label(card, linha["codigo"], 10, C["sec"], "bold", "white").pack(anchor="w", padx=20, pady=(16, 0))
+            self._label(card, f"Linha {nome}", 18, C["texto"], "bold", "white").pack(anchor="w", padx=20)
+            self._label(card, linha["status"], 10, self.status_cor(linha["status"]), "bold", "white").pack(anchor="w", padx=20, pady=(4, 2))
+            self._label(card, f"{len(linha['estacoes'])} Estações  •  {formatar_reais(linha['tarifa'])}", 9, C["sec"], bg="white").pack(anchor="w", padx=20)
+            self._botao(card, "Detalhes da Linha", lambda n=nome: self.tela_linha(n)).pack(fill="x", padx=20, pady=(16, 0))
 
         rodape = tk.Frame(area, bg=C["fundo"])
-        rodape.pack(fill="x", pady=20)
-        self._botao(rodape, "⚙ Controle do sistema", self.tela_admin).pack(side="right", padx=4)
+        rodape.pack(fill="x", pady=24)
+        self._botao(rodape, "⚙ Painel de Administração", self.tela_admin).pack(side="right")
 
     def tela_linha(self, nome):
         self.linha_atual = nome
         linha = self.linhas[nome]
         area = self._cabecalho(
             f"{linha['codigo']} • Linha {nome}",
-            f"{linha['status']} • Tarifa: {formatar_reais(linha['tarifa'])} • Intervalo: {linha['intervalo']} min")
+            f"Status: {linha['status']}  |  Tarifa: {formatar_reais(linha['tarifa'])}  |  Intervalo: {linha['intervalo']} min"
+        )
         self._nav(area)
+        
         grid = tk.Frame(area, bg=C["fundo"])
         grid.pack(fill="both", expand=True)
         for col in range(4):
             grid.columnconfigure(col, weight=1)
+            
         opcoes = [
-            ("🧭", "Planejar viagem", lambda: self.janela_planejamento(nome)),
-            ("📍", "Estações", lambda: self.janela_estacoes(nome)),
-            ("🕐", "Horários", lambda: self.janela_horarios(nome)),
-            ("🚇", "Próximo metrô", lambda: self.mostrar_proximo(nome)),
-            ("⚠", "Status da linha", lambda: self.janela_status(nome)),
-            ("💰", "Tarifa", lambda: self.mostrar_tarifa(nome)),
-            ("ℹ", "Informações", lambda: self.janela_informacoes(nome))
+            ("🗺", "Ver no Mapa Real", self.tela_mapa_rede),
+            ("🧭", "Planejar Rota", lambda: self.janela_planejamento(nome)),
+            ("📍", "Lista de Estações", lambda: self.janela_estacoes(nome)),
+            ("🕐", "Quadro de Horários", lambda: self.janela_horarios(nome)),
+            ("🚇", "Próxima Partida", lambda: self.mostrar_proximo(nome)),
+            ("⚠", "Status Operacional", lambda: self.janela_status(nome)),
+            ("ℹ", "Informações Gerais", lambda: self.janela_informacoes(nome))
         ]
+        
         for i, (icone, titulo, comando) in enumerate(opcoes):
             card = self._card(grid)
-            card.grid(row=i // 4, column=i % 4, sticky="nsew", padx=7, pady=7)
-            self._label(card, icone, 27, bg="white").pack(pady=(24, 8))
-            self._label(card, titulo, 12, C["texto"], "bold", "white").pack()
-            self._botao(card, "Abrir", comando).pack(fill="x", padx=25, pady=20)
+            card.grid(row=i // 4, column=i % 4, sticky="nsew", padx=6, pady=6)
+            self._label(card, icone, 24, bg="white").pack(pady=(20, 6))
+            self._label(card, titulo, 11, C["texto"], "bold", "white").pack()
+            self._botao(card, "Acessar", comando).pack(fill="x", padx=20, pady=16)
 
     def tela_dashboard(self):
-        area = self._cabecalho("Visão geral", "Resumo rápido do sistema METROREC")
+        area = self._cabecalho("Dashboard Operacional", "Indicadores da Região Metropolitana do Recife")
         self._nav(area)
+        
         total = sum(len(l["estacoes"]) for l in self.linhas.values())
         normais = sum(l["status"] == "Operação normal" for l in self.linhas.values())
-        indicadores = [
-            ("Linhas", len(self.linhas), "Linhas cadastradas"),
-            ("Estações", total, "Somando as três linhas"),
-            ("Operação normal", normais, "Linhas em situação normal"),
-            ("Atenção", len(self.linhas) - normais, "Linhas fora do padrão normal")
-        ]
+        
         cards = tk.Frame(area, bg=C["fundo"])
-        cards.pack(fill="x", pady=10)
+        cards.pack(fill="x", pady=8)
+        
+        indicadores = [
+            ("Linhas Ativas", len(self.linhas), "Metrorec"),
+            ("Estações Totais", total, "Com integrações"),
+            ("Operação Normal", normais, "Linhas regulares"),
+            ("Alertas Operacionais", len(self.linhas) - normais, "Atenção necessária")
+        ]
+        
         for titulo, valor, detalhe in indicadores:
             card = self._card(cards)
             card.pack(side="left", fill="both", expand=True, padx=5)
-            self._label(card, titulo, 10, C["sec"], "bold", "white").pack(anchor="w", padx=20, pady=(18, 0))
-            self._label(card, str(valor), 25, C["texto"], "bold", "white").pack(anchor="w", padx=20)
-            self._label(card, detalhe, 9, "#8a98a8", bg="white").pack(anchor="w", padx=20, pady=(0, 18))
-
-        baixo = tk.Frame(area, bg=C["fundo"])
-        baixo.pack(fill="both", expand=True, pady=10)
-        esquerda = self._card(baixo)
-        direita = self._card(baixo)
-        esquerda.pack(side="left", fill="both", expand=True, padx=(0, 7))
-        direita.pack(side="right", fill="both", expand=True, padx=(7, 0))
-        self._label(esquerda, "Situação das linhas", 15, C["texto"], "bold", "white").pack(anchor="w", padx=20, pady=18)
-        for nome, linha in self.linhas.items():
-            item = tk.Frame(esquerda, bg="#f6f8fa")
-            item.pack(fill="x", padx=18, pady=5)
-            self._label(item, f"{linha['codigo']} • {nome}", 10, C["texto"], "bold", "#f6f8fa").pack(side="left", padx=12, pady=12)
-            self._label(item, linha["status"], 9, self.status_cor(linha["status"]), "bold", "#f6f8fa").pack(side="right", padx=12)
-
-        self._label(direita, "Próximo metrô disponível", 15, C["texto"], "bold", "white").pack(anchor="w", padx=20, pady=18)
-        prox = self.proximo_global()
-        if prox:
-            nome, horario, falta = prox
-            self._label(direita, nome, 20, "#1f5fa8", "bold", "white").pack(anchor="w", padx=20)
-            self._label(direita, f"Horário: {horario}", 12, "#425466", bg="white").pack(anchor="w", padx=20, pady=4)
-            self._label(direita, minutos_para_texto(falta), 11, C["verde"], "bold", "white").pack(anchor="w", padx=20)
-        else:
-            self._label(direita, "Não há mais horários cadastrados hoje.", 11, C["sec"], bg="white").pack(anchor="w", padx=20)
-        self._botao(direita, "Atualizar", self.tela_dashboard).pack(fill="x", padx=20, pady=25)
-
-    def proximo_global(self):
-        itens = []
-        for nome, linha in self.linhas.items():
-            horario, falta = proximo_horario(linha)
-            if horario is not None:
-                itens.append((nome, horario, falta))
-        return min(itens, key=lambda x: x[2]) if itens else None
+            self._label(card, titulo, 10, C["sec"], "bold", "white").pack(anchor="w", padx=16, pady=(14, 0))
+            self._label(card, str(valor), 22, C["texto"], "bold", "white").pack(anchor="w", padx=16)
+            self._label(card, detalhe, 9, C["sec"], bg="white").pack(anchor="w", padx=16, pady=(0, 14))
 
     def tela_todas_linhas(self):
-        area = self._cabecalho("Todas as linhas", "Escolha uma linha para consultar seus detalhes")
+        area = self._cabecalho("Linhas da Rede", "Itinerários do Metrorec")
         self._nav(area)
-        lista = tk.Frame(area, bg=C["fundo"])
-        lista.pack(fill="both", expand=True)
+        
         for nome, linha in self.linhas.items():
-            card = self._card(lista)
-            card.pack(fill="x", pady=7)
-            esquerda = tk.Frame(card, bg="white")
-            esquerda.pack(side="left", fill="both", expand=True, padx=20, pady=17)
-            self._label(esquerda, f"{linha['codigo']} • {nome}", 16, C["texto"], "bold", "white").pack(anchor="w")
-            self._label(esquerda, f"{len(linha['estacoes'])} estações • {linha['estacoes'][0]} → {linha['estacoes'][-1]}",
-                        10, C["sec"], bg="white").pack(anchor="w", pady=4)
-            self._label(card, linha["status"], 10, self.status_cor(linha["status"]), "bold", "white").pack(side="left", padx=15)
-            self._botao(card, "Acessar", lambda n=nome: self.tela_linha(n)).pack(side="right", padx=20)
+            card = self._card(area)
+            card.pack(fill="x", pady=6)
+            
+            esq = tk.Frame(card, bg="white")
+            esq.pack(side="left", fill="both", expand=True, padx=16, pady=14)
+            
+            self._label(esq, f"{linha['codigo']} • Linha {nome}", 14, C["texto"], "bold", "white").pack(anchor="w")
+            self._label(esq, f"{len(linha['estacoes'])} Estações  |  Terminal: {linha['estacoes'][0]} ↔ {linha['estacoes'][-1]}", 10, C["sec"], bg="white").pack(anchor="w", pady=2)
+            
+            self._label(card, linha["status"], 10, self.status_cor(linha["status"]), "bold", "white").pack(side="left", padx=16)
+            self._botao(card, "Acessar Linha", lambda n=nome: self.tela_linha(n)).pack(side="right", padx=16)
 
     def janela_estacoes(self, nome):
         linha = self.linhas[nome]
-        w = self._janela_nova("Estações", 600, 600)
-        self._cabecalho_janela(w, f"Estações • {nome}", f"{len(linha['estacoes'])} estações na linha {linha['codigo']}")
+        w = self._janela_nova(f"Estações - Linha {nome}", 550, 550)
+        self._label(w, f"Estações da Linha {nome}", 16, C["texto"], "bold", C["fundo"]).pack(anchor="w", padx=20, pady=(16, 4))
+        
         box, area = self._area_rolavel(w)
-        box.pack(fill="both", expand=True, padx=30, pady=(0, 20))
+        box.pack(fill="both", expand=True, padx=20, pady=(0, 16))
+        
         for i, estacao in enumerate(linha["estacoes"], 1):
-            bg = "#eef6ff" if i % 2 else "white"
-            item = tk.Frame(area, bg=bg, bd=1, relief="solid", highlightthickness=1, highlightbackground=C["borda"])
-            item.pack(fill="x", pady=4)
-            self._label(item, f"{i:02d}", 10, "#1f5fa8", "bold", bg, width=5).pack(side="left", padx=10, pady=11)
-            self._label(item, estacao, 11, C["texto"], "bold", bg).pack(side="left", pady=11)
-            if estacao in ("Recife", "Joana Bezerra"):
-                tk.Label(item, text="CONEXÃO", font=("Segoe UI", 8, "bold"), bg="#102b4f", fg="white").pack(side="right", padx=12, pady=11)
-
-    def _cabecalho_janela(self, w, titulo, subtitulo):
-        box = tk.Frame(w, bg=C["fundo"])
-        box.pack(fill="x", padx=30, pady=(20, 8))
-        self._label(box, titulo, 21, C["texto"], "bold", C["fundo"]).pack(anchor="w")
-        self._label(box, subtitulo, 10, C["sec"], bg=C["fundo"]).pack(anchor="w", pady=(4, 0))
+            item = tk.Frame(area, bg="white")
+            item.pack(fill="x", pady=2, padx=4)
+            self._label(item, f"{i:02d}", 10, C["sec"], "bold", "white", width=4).pack(side="left", padx=8, pady=8)
+            self._label(item, estacao, 10, C["texto"], "bold", "white").pack(side="left")
 
     def janela_horarios(self, nome):
         linha = self.linhas[nome]
-        w = self._janela_nova("Horários", 720, 570)
-        self._cabecalho_janela(w, f"Horários • Linha {linha['codigo']}", f"{len(linha['horarios'])} horários cadastrados")
+        w = self._janela_nova("Horários", 650, 500)
+        self._label(w, f"Horários - Linha {nome}", 16, C["texto"], "bold", C["fundo"]).pack(anchor="w", padx=20, pady=(16, 4))
+        
         box, area = self._area_rolavel(w)
-        box.pack(fill="both", expand=True, padx=30, pady=(0, 20))
+        box.pack(fill="both", expand=True, padx=20, pady=(0, 16))
+        
         for i, horario in enumerate(linha["horarios"]):
-            tk.Label(area, text=horario, font=("Segoe UI", 11, "bold"), bg="#eff6ff", fg="#102b4f",
-                     width=12, pady=10, bd=1, relief="solid").grid(row=i // 5, column=i % 5, padx=7, pady=7, sticky="ew")
+            tk.Label(area, text=horario, font=("Segoe UI", 10, "bold"), bg="#F1F5F9", fg=C["texto"],
+                     width=10, pady=8).grid(row=i // 5, column=i % 5, padx=6, pady=6, sticky="ew")
 
     def mostrar_proximo(self, nome):
         linha = self.linhas[nome]
         horario, falta = proximo_horario(linha)
-        msg = (f"Linha {linha['codigo']} • {nome}\n\nPróximo metrô: {horario}\nTempo: {minutos_para_texto(falta)}"
-               if horario else f"Linha {linha['codigo']}\n\nNão há mais horários cadastrados para hoje.")
-        messagebox.showinfo("Próximo metrô", msg)
+        msg = f"Linha {nome}\n\nPróxima saída: {horario}\nEstimativa: {minutos_para_texto(falta)}" if horario else "Sem mais saídas hoje."
+        messagebox.showinfo("Próximo Comboio", msg)
 
     def janela_status(self, nome):
         linha = self.linhas[nome]
-        w = self._janela_nova("Status da linha", 500, 360)
-        card = self._card(w)
-        card.pack(fill="both", expand=True, padx=30, pady=30)
-        self._label(card, "Status da linha", 21, C["texto"], "bold", "white").pack(pady=(25, 8))
-        self._label(card, f"{linha['codigo']} • {nome}", 12, C["sec"], bg="white").pack()
-        self._label(card, linha["status"], 15, self.status_cor(linha["status"]), "bold", "white").pack(pady=20)
-        self._label(card, f"Intervalo médio: {linha['intervalo']} minutos", 11, "#425466", bg="white").pack(pady=(0, 25))
-
-    def mostrar_tarifa(self, nome):
-        linha = self.linhas[nome]
-        messagebox.showinfo("Tarifa", f"Linha {linha['codigo']} • {nome}\n\nTarifa atual: {formatar_reais(linha['tarifa'])}")
+        messagebox.showinfo("Status Operacional", f"Linha {nome}\n\nSituação: {linha['status']}\nIntervalo: {linha['intervalo']} min")
 
     def janela_informacoes(self, nome):
         linha = self.linhas[nome]
-        texto = "\n".join([
-            f"Linha: {nome}", f"Código: {linha['codigo']}", f"Estações: {len(linha['estacoes'])}",
-            f"Horários: {len(linha['horarios'])}", f"Tarifa: {formatar_reais(linha['tarifa'])}",
-            f"Intervalo médio: {linha['intervalo']} min", f"Status: {linha['status']}",
-            f"Primeira estação: {linha['estacoes'][0]}", f"Última estação: {linha['estacoes'][-1]}"
-        ])
-        messagebox.showinfo("Informações da linha", texto)
+        info = f"Linha {nome} ({linha['codigo']})\nEstações: {len(linha['estacoes'])}\nTarifa: {formatar_reais(linha['tarifa'])}"
+        messagebox.showinfo("Informações", info)
 
     def janela_planejamento_global(self):
         self.janela_planejamento()
 
     def janela_planejamento(self, nome_linha=None):
-        w = self._janela_nova("Planejar viagem", 700, 650)
-        self._cabecalho_janela(w, "Planejar viagem", "Escolha a origem e o destino para calcular a rota")
-        card = self._card(w); card.pack(fill="x", padx=30, pady=(0, 12))
-        dentro = tk.Frame(card, bg="white"); dentro.pack(fill="x", padx=24, pady=20)
-        origem = self._campo(dentro, "Origem", self.todas_estacoes())
-        destino = self._campo(dentro, "Destino", self.todas_estacoes())
-        linha_var = tk.StringVar(value=nome_linha or "Todas as linhas")
-        if nome_linha:
-            self._label(dentro, f"Linha atual: {nome_linha}", 10, C["texto"], "bold", "white").pack(anchor="w")
-        else:
-            self._campo(dentro, "Priorizar linha", ["Todas as linhas"] + list(self.linhas), linha_var)
-
-        resultado = tk.Text(w, height=10, font=("Segoe UI", 10), bg="white", fg=C["texto"], bd=1, relief="solid", padx=12, pady=12, wrap="word")
-        resultado.pack(fill="both", expand=True, padx=30); resultado.config(state="disabled")
-
-        def mostrar(texto):
-            resultado.config(state="normal"); resultado.delete("1.0", "end"); resultado.insert("1.0", texto); resultado.config(state="disabled")
+        w = self._janela_nova("Planeador de Viagem", 650, 600)
+        self._label(w, "Calcular Rota de Viagem", 16, C["texto"], "bold", C["fundo"]).pack(anchor="w", padx=24, pady=(20, 8))
+        
+        card = self._card(w)
+        card.pack(fill="x", padx=24, pady=(0, 12))
+        dentro = tk.Frame(card, bg="white")
+        dentro.pack(fill="x", padx=16, pady=16)
+        
+        origem = self._campo(dentro, "Estação de Origem", self.todas_estacoes())
+        destino = self._campo(dentro, "Estação de Destino", self.todas_estacoes())
+        
+        resultado = tk.Text(w, height=10, font=("Segoe UI", 10), bg="white", fg=C["texto"], bd=1, relief="solid", padx=10, pady=10)
+        resultado.pack(fill="both", expand=True, padx=24)
+        resultado.config(state="disabled")
 
         def calcular():
             o, d = origem.get(), destino.get()
-            if not o or not d:
-                messagebox.showwarning("Atenção", "Selecione a origem e o destino."); return
-            if o == d:
-                messagebox.showwarning("Atenção", "Origem e destino não podem ser iguais."); return
-            nome = linha_var.get()
-            if nome == "Todas as linhas":
-                rota = montar_rota_integrada(self.linhas, o, d)
-            else:
-                rota = calcular_rota_na_linha(self.linhas[nome], o, d)
-                if rota: rota["linha"] = nome
+            if not o or not d or o == d:
+                messagebox.showwarning("Aviso", "Selecione estações válidas e diferentes.")
+                return
+            
+            rota = montar_rota_integrada(self.linhas, o, d)
             if not rota:
-                mostrar("Não foi possível encontrar uma rota com os dados cadastrados."); return
-            texto = (
-                f"ORIGEM: {o}\nDESTINO: {d}\n\nLINHA: {rota['linha']}\n"
-                f"ESTAÇÕES PERCORRIDAS: {rota['estacoes']}\nTEMPO ESTIMADO: {rota['tempo']} minutos\n"
-                f"TARIFA: {formatar_reais(rota['tarifa'])}\n"
-            )
-            if rota.get("trocas"): texto += f"INTEGRAÇÃO: 1 troca em {rota.get('conexao', 'estação de conexão')}\n"
-            mostrar(texto + "\nROTA:\n" + " → ".join(rota["rota"]))
+                rota = calcular_rota_na_linha(self.linhas.get(nome_linha or "Jaboatão"), o, d)
+                
+            if not rota:
+                msg = "Rota não encontrada."
+            else:
+                msg = (
+                    f"Origem: {o}  →  Destino: {d}\n"
+                    f"Tempo estimado: {rota.get('tempo')} min\n"
+                    f"Tarifa: {formatar_reais(rota.get('tarifa', 4.25))}\n\n"
+                    f"Itinerário:\n" + " ➔ ".join(rota.get("rota", []))
+                )
+            resultado.config(state="normal")
+            resultado.delete("1.0", "end")
+            resultado.insert("1.0", msg)
+            resultado.config(state="disabled")
 
-        self._botao(w, "Calcular viagem", calcular).pack(fill="x", padx=30, pady=14)
+        self._botao(w, "Calcular Rota", calcular).pack(fill="x", padx=24, pady=16)
 
     def tela_admin(self):
-        area = self._cabecalho("Controle do sistema", "Área acadêmica para simular alterações durante a execução")
+        area = self._cabecalho("Administração do Sistema", "Gerenciar linhas")
         self._nav(area)
-        card = self._card(area); card.pack(fill="both", expand=True)
-        self._label(card, "Alterar informações da linha", 16, C["texto"], "bold", "white").pack(anchor="w", padx=25, pady=(25, 5))
-        self._label(card, "As alterações ficam apenas enquanto o programa estiver aberto.", 10, C["sec"], bg="white").pack(anchor="w", padx=25, pady=(0, 20))
-        form = tk.Frame(card, bg="white"); form.pack(fill="x", padx=25)
-        form.columnconfigure(0, weight=1); form.columnconfigure(1, weight=1)
-        linha_var, status_var, tarifa_var, intervalo_var = [tk.StringVar() for _ in range(4)]
-        linha_var.set(next(iter(self.linhas)))
-        linha_combo = self._campo_grid(form, "Linha", linha_var, list(self.linhas), 0, 0)
-        self._campo_grid(form, "Status", status_var, STATUS_DISPONIVEIS, 0, 1)
-        self._campo_grid(form, "Tarifa", tarifa_var, None, 2, 0)
-        self._campo_grid(form, "Intervalo médio (min)", intervalo_var, None, 2, 1)
+        card = self._card(area)
+        card.pack(fill="both", expand=True)
+        self._label(card, "Configuração de Linhas", 14, C["texto"], "bold", "white").pack(anchor="w", padx=20, pady=16)
 
-        area_h = tk.Frame(card, bg="white"); area_h.pack(fill="both", expand=True, padx=25, pady=10)
-        self._label(area_h, "Horários cadastrados", 11, C["texto"], "bold", "white").pack(anchor="w")
-        horarios = tk.Text(area_h, height=8, font=("Segoe UI", 10), bg="#f7f9fb", bd=1, relief="solid")
-        horarios.pack(fill="both", expand=True, pady=7)
-
-        def carregar():
-            l = self.linhas[linha_var.get()]
-            status_var.set(l["status"]); tarifa_var.set(str(l["tarifa"])); intervalo_var.set(str(l["intervalo"]))
-            horarios.delete("1.0", "end"); horarios.insert("1.0", ", ".join(l["horarios"]))
-
-        def validar_horarios():
-            lista = [h.strip() for h in horarios.get("1.0", "end").split(",") if h.strip()]
-            for h in lista:
-                try:
-                    hora, minuto = map(int, h.split(":"))
-                    if not (0 <= hora <= 23 and 0 <= minuto <= 59): raise ValueError
-                except ValueError:
-                    messagebox.showerror("Erro", f"Horário inválido: {h}"); return None
-            return lista
-
-        def salvar():
-            try:
-                tarifa = float(tarifa_var.get().replace(",", "."))
-                intervalo = int(intervalo_var.get())
-            except ValueError:
-                messagebox.showerror("Erro", "Tarifa e intervalo precisam ser numéricos."); return
-            lista = validar_horarios()
-            if lista is None or tarifa <= 0 or intervalo <= 0:
-                if lista is not None: messagebox.showwarning("Atenção", "Tarifa e intervalo devem ser maiores que zero.")
-                return
-            self.linhas[linha_var.get()].update(status=status_var.get(), tarifa=tarifa, intervalo=intervalo, horarios=lista)
-            messagebox.showinfo("Sucesso", "Informações atualizadas com sucesso.")
-
-        linha_combo.bind("<<ComboboxSelected>>", lambda _: carregar())
-        botoes = tk.Frame(card, bg="white"); botoes.pack(fill="x", padx=25, pady=(3, 25))
-        self._botao(botoes, "Carregar dados", carregar).pack(side="left")
-        self._botao(botoes, "Salvar alterações", salvar).pack(side="left", padx=8)
-        self._botao(botoes, "Voltar", self.tela_inicial).pack(side="right")
-        carregar()
-
-    def abrir_google_maps_estacao(self, estacao):
-        q = quote(f"Metrorec {estacao} Recife Pernambuco")
-        webbrowser.open(f"https://www.google.com/maps/search/?api=1&query={q}")
-
+    # ==============================================================================
+    # MAPA REAL INTERATIVO COM TKINTERMAPVIEW
+    # ==============================================================================
     def tela_mapa_rede(self):
-        area = self._cabecalho("Mapa da Rede", "Mapa da rede METROREC com referência visual de Recife")
+        area = self._cabecalho("Mapa da Rede Metroviária", "Simulação sobre mapa geográfico real")
         self._nav(area)
-        self._controles_mapa(area)
         
+        # Barra de Controles da Simulação e Tipo de Mapa
+        bar = tk.Frame(area, bg=C["fundo"])
+        bar.pack(fill="x", pady=(0, 10))
+        
+        for txt, cmd in [("▶ Iniciar Simulação", self.simulacao_iniciar),
+                         ("⏸ Pausar", self.simulacao_pausar),
+                         ("⏹ Parar", self.simulacao_parar),
+                         ("↻ Reiniciar", self.simulacao_reiniciar)]:
+            self._botao(bar, txt, cmd).pack(side="left", padx=(0, 6))
+
+        # Alternador do estilo de mapa (OpenStreetMap vs Satélite)
+        btn_sat = self._botao(bar, "🛰 Visão Satélite", lambda: self.map_widget.set_tile_server("https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"), "Metro.Nav.TButton")
+        btn_sat.pack(side="right", padx=(6, 0))
+        
+        btn_rua = self._botao(bar, "🗺 Visão Ruas", lambda: self.map_widget.set_tile_server("https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"), "Metro.Nav.TButton")
+        btn_rua.pack(side="right")
+
+        # Widget do Mapa Real
         caixa = tk.Frame(area, bg=C["fundo"])
         caixa.pack(fill="both", expand=True)
-        
-        # Canvas responsivo ocupando 100% da área útil sem barras de rolagem
-        self.mapa_canvas = tk.Canvas(caixa, bg=C["mapa"], highlightthickness=1, highlightbackground=C["borda"])
-        self.mapa_canvas.pack(fill="both", expand=True)
-        
-        # Redesenha e ajusta automaticamente caso a janela mude de tamanho
-        self.mapa_canvas.bind("<Configure>", lambda e: self._desenhar_mapa())
-        
-        self.mapa_zoom = 1.0
-        self._desenhar_mapa()
 
-        legenda = tk.Frame(area, bg=C["fundo"])
-        legenda.pack(fill="x", pady=(6, 0))
-        for texto, cor in [("● Estação", C["texto"]), ("━ L1 – Jaboatão", CORES_LINHAS["Jaboatão"]), 
-                           ("━ L2 – Camaragibe", CORES_LINHAS["Camaragibe"]), ("━ L3 – Sul", CORES_LINHAS["Sul"])]:
-            self._label(legenda, texto, 10, cor, "bold", C["fundo"]).pack(side="left", padx=8)
+        self.map_widget = tkintermapview.TkinterMapView(caixa, corner_radius=8)
+        self.map_widget.pack(fill="both", expand=True)
 
-    def _controles_mapa(self, area):
-        sim = tk.Frame(area, bg=C["fundo"])
-        sim.pack(fill="x", pady=(0, 8))
-        for texto, comando in [("▶ Iniciar", self.simulacao_iniciar), ("⏸ Pausar", self.simulacao_pausar), 
-                               ("⏹ Parar", self.simulacao_parar), ("↻ Reiniciar", self.simulacao_reiniciar)]:
-            self._botao(sim, texto, comando).pack(side="left", padx=4)
-        self._label(sim, "Velocidade:", 10, C["texto"], "bold", C["fundo"]).pack(side="left", padx=(18, 6))
-        for v in (0.5, 1):
-            self._botao(sim, f"{v:g}x", lambda valor=v: self.simulacao_alterar_velocidade(valor)).pack(side="left", padx=2)
+        # Centralizar na Região Metropolitana do Recife
+        self.map_widget.set_position(-8.0800, -34.9200)
+        self.map_widget.set_zoom(12)
+
+        self._desenhar_linhas_e_estacoes_reais()
+
+    def _desenhar_linhas_e_estacoes_reais(self):
+        """Desenha os traçados das linhas e os marcadores de cada estação no mapa real."""
+        self.marcadores_trens.clear()
+        
+        for nome, linha in self.linhas.items():
+            cor = CORES_LINHAS.get(nome, "#333333")
+            caminho_coords = []
+
+            for estacao in linha["estacoes"]:
+                if estacao in COORDENADAS_ESTACOES:
+                    lat, lon = COORDENADAS_ESTACOES[estacao]
+                    caminho_coords.append((lat, lon))
+
+                    # Adiciona Marcador na Estação Real
+                    self.map_widget.set_marker(
+                        lat, lon,
+                        text=estacao,
+                        command=lambda m, e=estacao: self.abrir_google_maps_estacao(e)
+                    )
+
+            # Desenha a linha conectando as estações
+            if len(caminho_coords) > 1:
+                self.map_widget.set_path(caminho_coords, color=cor, width=4)
 
     def _simulacao_ativa(self):
         return self.simulacao.ativo and not self.simulacao.paused and not self.simulacao.parado
 
     def _agendar_simulacao(self):
         self._cancelar_simulacao()
-        if self.mapa_canvas and self._simulacao_ativa():
-            self.simulacao_timer_id = self.mapa_canvas.after(int(1000 / self.simulacao.velocidade), self.simulacao_tick)
+        if self.map_widget and self._simulacao_ativa():
+            self.simulacao_timer_id = self.root.after(40, self.simulacao_tick)
 
     def _cancelar_simulacao(self):
-        if self.mapa_canvas and self.simulacao_timer_id is not None:
-            try: self.mapa_canvas.after_cancel(self.simulacao_timer_id)
-            except tk.TclError: pass
-        self.simulacao_timer_id = None
-
-    def _desenhar_mapa(self):
-        if self.mapa_canvas:
-            self.desenhar_mapa_rede(self.mapa_canvas)
+        if self.simulacao_timer_id is not None:
+            try:
+                self.root.after_cancel(self.simulacao_timer_id)
+            except tk.TclError:
+                pass
+            self.simulacao_timer_id = None
 
     def simulacao_iniciar(self):
-        self.simulacao.iniciar(); self._desenhar_mapa(); self._agendar_simulacao()
+        self.simulacao.iniciar()
+        self._agendar_simulacao()
 
     def simulacao_pausar(self):
-        self.simulacao.pausar(); self._cancelar_simulacao(); self._desenhar_mapa()
+        self.simulacao.pausar()
+        self._cancelar_simulacao()
 
     def simulacao_parar(self):
-        self.simulacao.parar(); self._cancelar_simulacao(); self._desenhar_mapa()
+        self.simulacao.parar()
+        self._cancelar_simulacao()
+        self.anim_step = 0.0
+        self._limpar_trens_do_mapa()
 
     def simulacao_reiniciar(self):
-        self._cancelar_simulacao(); self.simulacao.reiniciar(); self._desenhar_mapa(); self._agendar_simulacao()
+        self._cancelar_simulacao()
+        self.simulacao.reiniciar()
+        self.anim_step = 0.0
+        self._agendar_simulacao()
+
+    def _limpar_trens_do_mapa(self):
+        for marker in self.marcadores_trens.values():
+            marker.delete()
+        self.marcadores_trens.clear()
 
     def simulacao_tick(self):
         if self._simulacao_ativa():
-            self.simulacao.avancar(); self._desenhar_mapa(); self._agendar_simulacao()
-        else:
-            self._cancelar_simulacao()
+            self.anim_step += 0.03
+            if self.anim_step >= 1.0:
+                self.anim_step = 0.0
+                self.simulacao.avancar()
+            
+            self._atualizar_trens_no_mapa()
+            self._agendar_simulacao()
 
-    def simulacao_alterar_velocidade(self, valor):
-        self.simulacao.alterar_velocidade(valor); self._agendar_simulacao()
+    def _atualizar_trens_no_mapa(self):
+        """Atualiza a posição dos trens interpolando coordenadas de latitude e longitude."""
+        for i, trem in enumerate(self.simulacao.trens):
+            est_atual = trem.estacao_atual
+            linha_obj = self.linhas.get(trem.linha)
 
-    def desenhar_mapa_base(self, canvas, largura_w, altura_w):
-        """Carrega e redimensiona a imagem 'mapa_recife.png' para caber no Canvas."""
-        diretorio_atual = os.path.dirname(os.path.abspath(__file__))
-        caminho_png = os.path.join(diretorio_atual, "mapa_recife.png")
-        caminho_jpg = os.path.join(diretorio_atual, "mapa_recife.jpg")
-        caminho_imagem = caminho_png if os.path.exists(caminho_png) else caminho_jpg
+            if not linha_obj or est_atual not in COORDENADAS_ESTACOES:
+                continue
 
-        try:
-            if os.path.exists(caminho_imagem):
-                img_original = Image.open(caminho_imagem)
-                img_redim = img_original.resize((largura_w, altura_w), Image.Resampling.LANCZOS)
-                self.mapa_bg_img = ImageTk.PhotoImage(img_redim)
-                canvas.create_image(0, 0, image=self.mapa_bg_img, anchor="nw")
+            estacoes = linha_obj["estacoes"]
+            idx = estacoes.index(est_atual) if est_atual in estacoes else -1
+            sentido = getattr(trem, "sentido", 1)
+            prox_idx = idx + sentido
+
+            # Interpolação Geográfica entre Estações
+            if 0 <= prox_idx < len(estacoes):
+                lat1, lon1 = COORDENADAS_ESTACOES[est_atual]
+                lat2, lon2 = COORDENADAS_ESTACOES[estacoes[prox_idx]]
+
+                lat_atual = lat1 + (lat2 - lat1) * self.anim_step
+                lon_atual = lon1 + (lon2 - lon1) * self.anim_step
             else:
-                canvas.create_rectangle(0, 0, largura_w, altura_w, fill="#e8ecef", outline="#d0d7de")
-                canvas.create_text(largura_w // 2, altura_w // 2, text=f"Guarde a imagem do mapa na pasta do projeto como:\n'mapa_recife.png'",
-                                   font=("Segoe UI", 11, "bold"), fill=C["sec"], justify="center")
-        except Exception as e:
-            canvas.create_rectangle(0, 0, largura_w, altura_w, fill="#e8ecef", outline="#d0d7de")
-            canvas.create_text(largura_w // 2, altura_w // 2, text=f"Erro ao carregar imagem: {e}",
-                               font=("Segoe UI", 11, "bold"), fill=C["vermelho"], justify="center")
+                lat_atual, lon_atual = COORDENADAS_ESTACOES[est_atual]
 
-    def _desenhar_trens(self, canvas, pos):
-        for trem in self.simulacao.trens:
-            if trem.estacao_atual in pos:
-                x, y = pos[trem.estacao_atual]; cor = CORES_LINHAS.get(trem.linha, C["botao"])
-                canvas.create_text(x + 18, y - 12, text="🚇", font=("Segoe UI Emoji", 13), fill=cor)
-                canvas.create_text(x + 22, y + 12, text=f"T{trem.id:02d}", font=("Segoe UI", 8, "bold"), fill=C["texto"])
+            # Atualizar ou Criar Marcador do Trem
+            chave_trem = f"trem_{i}"
+            rotulo = f"🚆 {trem.linha}"
 
-    def desenhar_mapa_rede(self, canvas):
-        canvas.delete("all")
-        
-        largura_w = canvas.winfo_width()
-        altura_w = canvas.winfo_height()
-        if largura_w < 50 or altura_w < 50:
-            largura_w, altura_w = 1000, 500
-
-        # 1. Desenha a imagem de fundo preenchendo o canvas proporcionalmente
-        self.desenhar_mapa_base(canvas, largura_w, altura_w)
-
-        # Resolução de referência base: 1000x500
-        escala_x = largura_w / 1000.0
-        escala_y = altura_w / 500.0
-        
-        pos = {n: (x * escala_x, y * escala_y) for n, (x, y) in POSICOES.items()}
-
-        # 2. Desenha as linhas do metrô sobre o mapa
-        for nome, linha in self.linhas.items():
-            cor = CORES_LINHAS[nome]
-            for a, b in zip(linha["estacoes"], linha["estacoes"][1:]):
-                if a in pos and b in pos:
-                    x1, y1 = pos[a]
-                    x2, y2 = pos[b]
-                    canvas.create_line(x1, y1, x2, y2, fill=cor, width=4, capstyle="round", smooth=True)
-
-        # 3. Desenha os pontos das Estações
-        mostradas = set()
-        for nome, linha in self.linhas.items():
-            cor = CORES_LINHAS[nome]
-            for estacao in linha["estacoes"]:
-                if estacao in mostradas or estacao not in pos:
-                    continue
-                x, y = pos[estacao]
-                item = canvas.create_oval(x - 4, y - 4, x + 4, y + 4, fill="white", outline=cor, width=2)
-                canvas.create_text(x + 8, y - 4, text=estacao, anchor="w", font=("Segoe UI", 8, "bold"), fill=C["texto"])
-                canvas.tag_bind(item, "<Button-1>", lambda _, e=estacao: self.abrir_info_estacao(e))
-                mostradas.add(estacao)
-
-        # 4. Destaque das estações de integração principal
-        for estacao in ("Joana Bezerra", "Recife"):
-            if estacao in pos:
-                x, y = pos[estacao]
-                item = canvas.create_oval(x - 7, y - 7, x + 7, y + 7, fill=C["botao"], outline="white", width=2)
-                canvas.tag_bind(item, "<Button-1>", lambda _, e=estacao: self.abrir_info_estacao(e))
-
-        # 5. Desenha a simulação dos trens sobre o mapa
-        self._desenhar_trens(canvas, pos)
-
-    def abrir_info_estacao(self, estacao, linha_nome=None):
-        disponiveis = [nome for nome, linha in self.linhas.items() if estacao in linha["estacoes"]]
-        if not disponiveis:
-            messagebox.showwarning("Atenção", f"A estação {estacao} não está cadastrada na rede."); return
-        nome = linha_nome if linha_nome in disponiveis else disponiveis[0]
-        linha = self.linhas[nome]; i = linha["estacoes"].index(estacao)
-        proxima = linha["estacoes"][i + 1] if i + 1 < len(linha["estacoes"]) else "Fim de linha"
-        w = self._janela_nova(f"Estação • {estacao}", 440, 300)
-        tk.Frame(w, bg=C["botao"], height=55).pack(fill="x")
-        self._label(w, estacao, 18, "white", "bold", C["botao"]).place(x=16, y=10)
-        info = tk.Frame(w, bg=C["fundo"]); info.pack(fill="both", expand=True, padx=16, pady=10)
-        for texto in [f"Linha: {nome}", f"Status: {linha['status']}", f"Próxima estação: {proxima}", f"Linhas disponíveis: {', '.join(disponiveis)}"]:
-            self._label(info, texto, 10, C["texto"], bg=C["fundo"]).pack(anchor="w")
-        botoes = tk.Frame(w, bg=C["fundo"]); botoes.pack(fill="x", padx=16, pady=(0, 16))
-        self._botao(botoes, "Ver no Google Maps", lambda: self.abrir_google_maps_estacao(estacao)).pack(side="left", padx=(0, 8))
-        self._botao(botoes, "Planejar viagem", lambda: (w.destroy(), self.janela_planejamento())).pack(side="left")
+            if chave_trem in self.marcadores_trens:
+                self.marcadores_trens[chave_trem].set_position(lat_atual, lon_atual)
+            else:
+                marcador = self.map_widget.set_marker(lat_atual, lon_atual, text=rotulo)
+                self.marcadores_trens[chave_trem] = marcador
