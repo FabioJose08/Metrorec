@@ -1,4 +1,3 @@
-import time
 from dataclasses import dataclass, field
 
 
@@ -16,126 +15,77 @@ class Trem:
 
 
 class SimulacaoTrens:
-    """Motor pequeno de simulação para os três trens da rede METROREC."""
+    """Motor simples: cada trem percorre continuamente o trecho atual."""
 
     def __init__(self, linhas):
         self.linhas = linhas
-        self.trens = []
         self.velocidade = 1.0
-        self.ativo = False
-        self.paused = False
-        self.parado = False
+        self.ativo = self.paused = self.parado = False
         self.eventos = []
-        self.tempo_inicial = time.strftime("%H:%M")
         self._montar_trens()
 
     def _montar_trens(self):
+        terminais = [(1, "Jaboatão", "Jaboatão"), (2, "Camaragibe", "Camaragibe"), (3, "Sul", "Cajueiro Seco")]
         self.trens = []
-        configuracao = [
-            (1, "Jaboatão", "Jaboatão"),
-            (2, "Camaragibe", "Camaragibe"),
-            (3, "Sul", "Cajueiro Seco"),
-        ]
-
-        for idx, nome_linha, terminal in configuracao:
-            linha = self.linhas[nome_linha]
-            codigo = linha["codigo"]
-            estacoes = linha["estacoes"]
-            idx_atual = estacoes.index(terminal)
-            proxima = estacoes[idx_atual + 1] if idx_atual + 1 < len(estacoes) else terminal
-            trem = Trem(
-                id=idx,
-                linha=nome_linha,
-                codigo_linha=codigo,
-                estacao_atual=terminal,
-                proxima_estacao=proxima,
-                sentido="ida",
-                status="Em movimento",
-                progresso=0.0,
-            )
-            self.trens.append(trem)
+        for idx, linha, terminal in terminais:
+            dados = self.linhas[linha]
+            pos = dados["estacoes"].index(terminal)
+            self.trens.append(Trem(idx, linha, dados["codigo"], terminal, dados["estacoes"][pos + 1] if pos + 1 < len(dados["estacoes"]) else terminal))
 
     def iniciar(self):
-        self.ativo = True
-        self.paused = False
-        self.parado = False
-        self.eventos.append(f"{self.tempo_inicial} — Simulação iniciada.")
+        self.ativo, self.paused, self.parado = True, False, False
 
     def pausar(self):
-        self.paused = True
-        self.ativo = False
-        self.eventos.append(f"{self.tempo_inicial} — Simulação pausada.")
+        self.paused, self.ativo = True, False
 
     def parar(self):
-        self.paused = False
-        self.ativo = False
-        self.parado = True
-        self.eventos.append(f"{self.tempo_inicial} — Simulação parada.")
+        self.paused, self.ativo, self.parado = False, False, True
 
     def reiniciar(self):
         self._montar_trens()
-        self.ativo = True
-        self.paused = False
-        self.parado = False
-        self.eventos = []
-        self.eventos.append(f"{self.tempo_inicial} — Simulação reiniciada.")
+        self.eventos.clear()
+        self.ativo, self.paused, self.parado = True, False, False
 
-    def avancar(self):
+    def _mover(self, trem):
+        estacoes = self.linhas[trem.linha]["estacoes"]
+        atual = estacoes.index(trem.estacao_atual)
+        direcao = 1 if trem.sentido == "ida" else -1
+        proximo = atual + direcao
+
+        if not 0 <= proximo < len(estacoes):
+            trem.sentido = "volta" if direcao == 1 else "ida"
+            direcao *= -1
+            proximo = atual + direcao
+            trem.status = "Retornando"
+
+        trem.progresso = 0.0
+        trem.estacao_atual = estacoes[proximo]
+        seguinte = proximo + direcao
+        trem.proxima_estacao = estacoes[seguinte] if 0 <= seguinte < len(estacoes) else "Terminal"
+        if trem.proxima_estacao != "Terminal":
+            trem.status = "Em movimento"
+
+    def atualizar(self, passo=0.03):
         if not self.ativo or self.paused or self.parado:
             return
-
         for trem in self.trens:
-            linha = self.linhas[trem.linha]
-            estacoes = linha["estacoes"]
-            atual_idx = estacoes.index(trem.estacao_atual)
+            trem.progresso += passo * self.velocidade * 100
+            while trem.progresso >= 100:
+                trem.progresso -= 100
+                self._mover(trem)
 
-            if trem.sentido == "ida":
-                if atual_idx == len(estacoes) - 1:
-                    trem.sentido = "volta"
-                    trem.status = "Retornando"
-                    trem.proxima_estacao = estacoes[-2]
-                    trem.eventos.append(f"{self.tempo_inicial} — Trem {trem.id:02d} chegou ao terminal {estacoes[-1]}.")
-                    continue
-
-                proxima_idx = atual_idx + 1
-                proxima_estacao = estacoes[proxima_idx]
-                trem.estacao_atual = proxima_estacao
-                trem.proxima_estacao = estacoes[proxima_idx + 1] if proxima_idx + 1 < len(estacoes) else "Terminal"
-                trem.status = "Em movimento"
-                trem.progresso = min(100, round((proxima_idx / max(len(estacoes) - 1, 1)) * 100, 2))
-                trem.eventos.append(f"{self.tempo_inicial} — Trem {trem.id:02d} chegou à estação {proxima_estacao}.")
-
-            elif trem.sentido == "volta":
-                if atual_idx == 0:
-                    trem.sentido = "ida"
-                    trem.status = "Em movimento"
-                    trem.proxima_estacao = estacoes[1]
-                    trem.eventos.append(f"{self.tempo_inicial} — Trem {trem.id:02d} retornou ao terminal {estacoes[0]}.")
-                    continue
-
-                proxima_idx = atual_idx - 1
-                proxima_estacao = estacoes[proxima_idx]
-                trem.estacao_atual = proxima_estacao
-                trem.proxima_estacao = estacoes[proxima_idx - 1] if proxima_idx - 1 >= 0 else "Terminal"
-                trem.status = "Em movimento"
-                trem.progresso = min(100, round(((len(estacoes) - proxima_idx) / max(len(estacoes), 1)) * 100, 2))
-                trem.eventos.append(f"{self.tempo_inicial} — Trem {trem.id:02d} retornou à estação {proxima_estacao}.")
-
-        self.eventos.extend([f"{self.tempo_inicial} — Trem {trem.id:02d} em {trem.estacao_atual}." for trem in self.trens])
+    def avancar(self):
+        """Avança um trecho inteiro, mantendo compatibilidade com os testes existentes."""
+        if self.ativo and not self.paused and not self.parado:
+            for trem in self.trens:
+                self._mover(trem)
 
     def alterar_velocidade(self, valor):
-        self.velocidade = float(valor)
+        self.velocidade = max(0.1, float(valor))
 
     def painel(self):
-        texto = []
-        for trem in self.trens:
-            texto.append(
-                f"TREM {trem.id:02d}\n"
-                f"Linha: {trem.linha}\n"
-                f"Estação atual: {trem.estacao_atual}\n"
-                f"Próxima: {trem.proxima_estacao}\n"
-                f"Status: {trem.status}\n"
-                f"Sentido: {trem.sentido}\n"
-                f"Progresso: {int(trem.progresso)}%"
-            )
-        return "\n\n".join(texto)
+        return "\n\n".join(
+            f"TREM {t.id:02d}\nLinha: {t.linha}\nEstação atual: {t.estacao_atual}\n"
+            f"Próxima: {t.proxima_estacao}\nStatus: {t.status}\nSentido: {t.sentido}\n"
+            f"Progresso: {int(t.progresso)}%" for t in self.trens
+        )

@@ -1,16 +1,16 @@
-import os
-import math
+import json
 import tkinter as tk
+import unicodedata
+import urllib.request
 import webbrowser
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from tkinter import ttk, messagebox
 import tkintermapview
 
-from dados import LINHAS, STATUS_DISPONIVEIS
+from dados import LINHAS
 from simulacao import SimulacaoTrens
 from viagens import calcular_rota_na_linha, montar_rota_integrada, proximo_horario
 from utilitarios import formatar_reais, horario_atual, data_atual, minutos_para_texto
-
 
 # Paleta de Cores do Sistema
 C = {
@@ -35,46 +35,33 @@ CORES_LINHAS = {
     "Sul": "#2563EB"          # Azul
 }
 
-# Coordenadas Reais de Latitude e Longitude de Cada Estação
+API_LINHAS = "https://esigportal2.recife.pe.gov.br/arcgis/rest/services/MeioAmbiente/PCR_CBTU_Mobilidade/MapServer/3/query"
+API_ESTACOES = "https://esigportal2.recife.pe.gov.br/arcgis/rest/services/MeioAmbiente/PCR_CBTU_Mobilidade/MapServer/2/query"
+
+# Fallback usado somente se a API estiver indisponível.
 COORDENADAS_ESTACOES = {
-    # Linha Camaragibe
-    "Camaragibe": (-8.0211, -34.9818),
-    "Cosme e Damião": (-8.0322, -34.9669),
-    "Rodoviária": (-8.0428, -34.9582),
-    "Curado": (-8.0673, -34.9721),
-    "Alto do Céu": (-8.0776, -34.9625),
-    "Coqueiral": (-8.0837, -34.9542),
-
-    # Linha Jaboatão
-    "Jaboatão": (-8.1132, -35.0152),
-    "Engenho Velho": (-8.1068, -35.0035),
-    "Floriano": (-8.1009, -34.9904),
-    "Cavaleiro": (-8.0932, -34.9687),
-
-    # Tronco Comum (Centro)
-    "Tejipió": (-8.0858, -34.9458),
-    "Barro": (-8.0812, -34.9351),
-    "Werneck": (-8.0782, -34.9221),
-    "Santa Luzia": (-8.0772, -34.9123),
-    "Mangueira": (-8.0771, -34.9031),
-    "Ipiranga": (-8.0768, -34.8953),
-    "Afogados": (-8.0735, -34.8872),
-    "Joana Bezerra": (-8.0701, -34.8805),
-    "Recife": (-8.0671, -34.8722),
-
-    # Linha Sul
-    "Largo da Paz": (-8.0815, -34.8885),
-    "Imbiribeira": (-8.0941, -34.8942),
-    "Antônio Falcão": (-8.1022, -34.8988),
-    "Shopping": (-8.1132, -34.9035),
-    "Tancredo Neves": (-8.1221, -34.9068),
-    "Aeroporto": (-8.1332, -34.9112),
-    "Porta Larga": (-8.1435, -34.9162),
-    "Monte dos Guararapes": (-8.1541, -34.9198),
-    "Prazeres": (-8.1638, -34.9232),
-    "Cajueiro Seco": (-8.1752, -34.9281)
+    "Camaragibe": (-8.0247222, -34.9950000), "Cosme e Damião": (-8.0355556, -34.9888889),
+    "Rodoviária": (-8.0644444, -34.9811111), "Curado": (-8.0758333, -34.9786111),
+    "Alto do Céu": (-8.0847222, -34.9747222), "Coqueiral": (-8.0911111, -34.9647222),
+    "Jaboatão": (-8.1108333, -35.0150000), "Engenho Velho": (-8.1077778, -35.0050000),
+    "Floriano": (-8.1066667, -34.9930556), "Cavaleiro": (-8.0941667, -34.9727778),
+    "Tejipió": (-8.0902778, -34.9563889), "Barro": (-8.0886111, -34.9455556),
+    "Werneck": (-8.0858333, -34.9361111), "Santa Luzia": (-8.0838889, -34.9300000),
+    "Mangueira": (-8.0791667, -34.9211111), "Ipiranga": (-8.0775000, -34.9133333),
+    "Afogados": (-8.0772222, -34.9061111), "Joana Bezerra": (-8.0730556, -34.8952778),
+    "Recife": (-8.0683333, -34.8847222), "Largo da Paz": (-8.0813889, -34.9047222),
+    "Imbiribeira": (-8.0900000, -34.9075000), "Antônio Falcão": (-8.1097222, -34.9088889),
+    "Shopping": (-8.1158333, -34.9102778), "Tancredo Neves": (-8.1219444, -34.9116667),
+    "Aeroporto": (-8.1341667, -34.9144444), "Porta Larga": (-8.1469444, -34.9175000),
+    "Monte dos Guararapes": (-8.1541667, -34.9200000), "Prazeres": (-8.1608333, -34.9266667),
+    "Cajueiro Seco": (-8.1680556, -34.9341667)
 }
 
+ROTAS_MAPA = {
+    "Jaboatão": ["Jaboatão", "Engenho Velho", "Floriano", "Cavaleiro", "Coqueiral", "Tejipió", "Barro", "Werneck", "Santa Luzia", "Mangueira", "Ipiranga", "Afogados", "Joana Bezerra", "Recife"],
+    "Camaragibe": ["Camaragibe", "Cosme e Damião", "Rodoviária", "Curado", "Alto do Céu", "Coqueiral", "Tejipió", "Barro", "Werneck", "Santa Luzia", "Mangueira", "Ipiranga", "Afogados", "Joana Bezerra", "Recife"],
+    "Sul": ["Recife", "Joana Bezerra", "Largo da Paz", "Imbiribeira", "Antônio Falcão", "Shopping", "Tancredo Neves", "Aeroporto", "Porta Larga", "Monte dos Guararapes", "Prazeres", "Cajueiro Seco"],
+}
 
 class MetroRecApp:
     def __init__(self, root):
@@ -86,6 +73,8 @@ class MetroRecApp:
         # Atributos do Mapa Real
         self.map_widget = None
         self.marcadores_trens = {}
+        self.icones_estacoes = {}
+        self.tracos_api = []
         self.simulacao_timer_id = None
         self.simulacao = SimulacaoTrens(self.linhas)
         self.anim_step = 0.0
@@ -402,62 +391,141 @@ class MetroRecApp:
     # MAPA REAL INTERATIVO COM TKINTERMAPVIEW
     # ==============================================================================
     def tela_mapa_rede(self):
-        area = self._cabecalho("Mapa da Rede Metroviária", "Simulação sobre mapa geográfico real")
+        area = self._cabecalho("Mapa da Rede Metroviária", "Traçado real baseado em dados GIS da Prefeitura/CBTU")
         self._nav(area)
-        
-        # Barra de Controles da Simulação e Tipo de Mapa
         bar = tk.Frame(area, bg=C["fundo"])
         bar.pack(fill="x", pady=(0, 10))
-        
-        for txt, cmd in [("▶ Iniciar Simulação", self.simulacao_iniciar),
-                         ("⏸ Pausar", self.simulacao_pausar),
-                         ("⏹ Parar", self.simulacao_parar),
-                         ("↻ Reiniciar", self.simulacao_reiniciar)]:
+        for txt, cmd in [("▶ Iniciar Simulação", self.simulacao_iniciar), ("⏸ Pausar", self.simulacao_pausar),
+                         ("⏹ Parar", self.simulacao_parar), ("↻ Reiniciar", self.simulacao_reiniciar)]:
             self._botao(bar, txt, cmd).pack(side="left", padx=(0, 6))
+        self._botao(bar, "🛰 Visão Satélite",
+                    lambda: self.map_widget.set_tile_server("https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"),
+                    "Metro.Nav.TButton").pack(side="right", padx=(6, 0))
+        self._botao(bar, "🗺 Visão Ruas",
+                    lambda: self.map_widget.set_tile_server("https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"),
+                    "Metro.Nav.TButton").pack(side="right")
 
-        # Alternador do estilo de mapa (OpenStreetMap vs Satélite)
-        btn_sat = self._botao(bar, "🛰 Visão Satélite", lambda: self.map_widget.set_tile_server("https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"), "Metro.Nav.TButton")
-        btn_sat.pack(side="right", padx=(6, 0))
-        
-        btn_rua = self._botao(bar, "🗺 Visão Ruas", lambda: self.map_widget.set_tile_server("https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"), "Metro.Nav.TButton")
-        btn_rua.pack(side="right")
-
-        # Widget do Mapa Real
         caixa = tk.Frame(area, bg=C["fundo"])
         caixa.pack(fill="both", expand=True)
-
         self.map_widget = tkintermapview.TkinterMapView(caixa, corner_radius=8)
         self.map_widget.pack(fill="both", expand=True)
-
-        # Centralizar na Região Metropolitana do Recife
-        self.map_widget.set_position(-8.0800, -34.9200)
+        self.map_widget.set_position(-8.10, -34.94)
         self.map_widget.set_zoom(12)
-
+        self._carregar_gis()
         self._desenhar_linhas_e_estacoes_reais()
+        self.root.after(250, self._ajustar_mapa)
+
+    @staticmethod
+    def _normalizar(texto):
+        texto = unicodedata.normalize("NFD", str(texto)).encode("ascii", "ignore").decode().lower()
+        return "".join(c for c in texto if c.isalnum())
+
+    def _api(self, url, campos):
+        q = urlencode({"where": "1=1", "outFields": campos, "returnGeometry": "true",
+                       "outSR": "4326", "f": "geojson", "returnTrueCurves": "false"})
+        try:
+            with urllib.request.urlopen(f"{url}?{q}", timeout=8) as r:
+                return json.loads(r.read().decode())
+        except Exception:
+            return None
+
+    def _carregar_gis(self):
+        estacoes = self._api(API_ESTACOES, "name")
+        if estacoes:
+            nomes = {self._normalizar(n): n for n in COORDENADAS_ESTACOES}
+            for f in estacoes.get("features", []):
+                bruto = f.get("properties", {}).get("name", "").replace("estacao", "")
+                nome = self._normalizar(bruto)
+                c = f.get("geometry", {}).get("coordinates", [])
+                alvo = next((n for k, n in nomes.items() if k == nome or k in nome or nome in k), None)
+                if alvo and len(c) >= 2:
+                    COORDENADAS_ESTACOES[alvo] = (float(c[1]), float(c[0]))
+
+        self.tracos_api = []
+        linhas = self._api(API_LINHAS, "name")
+        if not linhas:
+            return
+        partes = []
+        for f in linhas.get("features", []):
+            g = f.get("geometry", {})
+            c = g.get("coordinates", [])
+            partes.extend([c] if g.get("type") == "LineString" else c)
+
+        for nome, rota in ROTAS_MAPA.items():
+            for origem, destino in zip(rota, rota[1:]):
+                trecho = self._melhor_trecho(origem, destino, partes)
+                if trecho:
+                    self.tracos_api.append((nome, origem, destino, trecho))
+
+    @staticmethod
+    def _melhor_trecho(origem, destino, partes):
+        a, b = COORDENADAS_ESTACOES[origem], COORDENADAS_ESTACOES[destino]
+        melhor = None
+        for parte in partes:
+            if len(parte) < 2:
+                continue
+            p = [(float(y), float(x)) for x, y, *resto in parte]
+            ia = min(range(len(p)), key=lambda i: (p[i][0] - a[0]) ** 2 + (p[i][1] - a[1]) ** 2)
+            ib = min(range(len(p)), key=lambda i: (p[i][0] - b[0]) ** 2 + (p[i][1] - b[1]) ** 2)
+            da = (p[ia][0] - a[0]) ** 2 + (p[ia][1] - a[1]) ** 2
+            db = (p[ib][0] - b[0]) ** 2 + (p[ib][1] - b[1]) ** 2
+            if max(da, db) > 0.006 ** 2 or ia == ib:
+                continue
+            trecho = p[ia:ib + 1] if ia < ib else p[ib:ia + 1][::-1]
+            erro = da + db
+            tamanho = sum((y[0] - x[0]) ** 2 + (y[1] - x[1]) ** 2 for x, y in zip(trecho, trecho[1:]))
+            candidato = (erro, tamanho, trecho)
+            if melhor is None or candidato[:2] < melhor[:2]:
+                melhor = candidato
+        return melhor[2] if melhor else None
+
+    def _icone_estacao(self, cor, integracao=False):
+        chave = (cor, integracao)
+        if chave in self.icones_estacoes:
+            return self.icones_estacoes[chave]
+        tamanho, raio = (9, 3) if integracao else (7, 2)
+        imagem = tk.PhotoImage(master=self.root, width=tamanho, height=tamanho)
+        centro = (tamanho - 1) / 2
+        for y in range(tamanho):
+            for x in range(tamanho):
+                if ((x - centro) ** 2 + (y - centro) ** 2) ** .5 <= raio:
+                    imagem.put(cor, (x, y))
+        self.icones_estacoes[chave] = imagem
+        return imagem
 
     def _desenhar_linhas_e_estacoes_reais(self):
-        """Desenha os traçados das linhas e os marcadores de cada estação no mapa real."""
-        self.marcadores_trens.clear()
-        
-        for nome, linha in self.linhas.items():
-            cor = CORES_LINHAS.get(nome, "#333333")
-            caminho_coords = []
+        self._limpar_trens_do_mapa()
+        api_pares = {(n, o, d): p for n, o, d, p in self.tracos_api}
+        for nome, rota in ROTAS_MAPA.items():
+            for origem, destino in zip(rota, rota[1:]):
+                a, b = COORDENADAS_ESTACOES[origem], COORDENADAS_ESTACOES[destino]
+                self.map_widget.set_path(api_pares.get((nome, origem, destino), [a, b]),
+                                         color=CORES_LINHAS[nome], width=3)
 
-            for estacao in linha["estacoes"]:
-                if estacao in COORDENADAS_ESTACOES:
-                    lat, lon = COORDENADAS_ESTACOES[estacao]
-                    caminho_coords.append((lat, lon))
+        mostradas = set()
+        for nome, estacoes in ROTAS_MAPA.items():
+            for estacao in estacoes:
+                if estacao in mostradas:
+                    continue
+                self.map_widget.set_marker(
+                    *COORDENADAS_ESTACOES[estacao], text=f"  {estacao}",
+                    icon=self._icone_estacao(CORES_LINHAS[nome], estacao in {"Recife", "Joana Bezerra", "Coqueiral"}),
+                    icon_anchor="center", text_color="#334155",
+                    font=("Segoe UI", 8 if estacao in {"Recife", "Joana Bezerra", "Coqueiral"} else 7, "bold"),
+                    command=lambda m, e=estacao: self.abrir_google_maps_estacao(e)
+                )
+                mostradas.add(estacao)
 
-                    # Adiciona Marcador na Estação Real
-                    self.map_widget.set_marker(
-                        lat, lon,
-                        text=estacao,
-                        command=lambda m, e=estacao: self.abrir_google_maps_estacao(e)
-                    )
+    def _ajustar_mapa(self):
+        if not self.map_widget or not self.map_widget.winfo_exists():
+            return
+        lats, lons = zip(*COORDENADAS_ESTACOES.values())
+        self.map_widget.fit_bounding_box((max(lats) + .008, min(lons) - .008),
+                                         (min(lats) - .008, max(lons) + .008))
 
-            # Desenha a linha conectando as estações
-            if len(caminho_coords) > 1:
-                self.map_widget.set_path(caminho_coords, color=cor, width=4)
+    def abrir_google_maps_estacao(self, estacao):
+        lat, lon = COORDENADAS_ESTACOES[estacao]
+        webbrowser.open(f"https://www.google.com/maps/search/?api=1&query={quote(f'{lat},{lon}')}")
 
     def _simulacao_ativa(self):
         return self.simulacao.ativo and not self.simulacao.paused and not self.simulacao.parado
@@ -491,8 +559,8 @@ class MetroRecApp:
 
     def simulacao_reiniciar(self):
         self._cancelar_simulacao()
+        self._limpar_trens_do_mapa()
         self.simulacao.reiniciar()
-        self.anim_step = 0.0
         self._agendar_simulacao()
 
     def _limpar_trens_do_mapa(self):
@@ -502,44 +570,48 @@ class MetroRecApp:
 
     def simulacao_tick(self):
         if self._simulacao_ativa():
-            self.anim_step += 0.03
-            if self.anim_step >= 1.0:
-                self.anim_step = 0.0
-                self.simulacao.avancar()
-            
+            self.simulacao.atualizar(0.04)
             self._atualizar_trens_no_mapa()
             self._agendar_simulacao()
 
+    def _ponto_no_traco(self, linha, origem, destino, progresso):
+        chaves = {(n, o, d): trecho for n, o, d, trecho in self.tracos_api}
+        trecho = chaves.get((linha, origem, destino))
+        if trecho is None:
+            trecho = chaves.get((linha, destino, origem))
+            if trecho:
+                trecho = trecho[::-1]
+        if not trecho:
+            a, b = COORDENADAS_ESTACOES[origem], COORDENADAS_ESTACOES[destino]
+            return a[0] + (b[0] - a[0]) * progresso, a[1] + (b[1] - a[1]) * progresso
+
+        dist = [0.0]
+        for a, b in zip(trecho, trecho[1:]):
+            dist.append(dist[-1] + ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** .5)
+        alvo = dist[-1] * progresso
+        for i in range(1, len(dist)):
+            if alvo <= dist[i]:
+                a, b = trecho[i - 1], trecho[i]
+                t = (alvo - dist[i - 1]) / max(dist[i] - dist[i - 1], 1e-12)
+                return a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+        return trecho[-1]
+
     def _atualizar_trens_no_mapa(self):
-        """Atualiza a posição dos trens interpolando coordenadas de latitude e longitude."""
         for i, trem in enumerate(self.simulacao.trens):
-            est_atual = trem.estacao_atual
-            linha_obj = self.linhas.get(trem.linha)
-
-            if not linha_obj or est_atual not in COORDENADAS_ESTACOES:
+            linha = self.linhas.get(trem.linha)
+            if not linha:
                 continue
-
-            estacoes = linha_obj["estacoes"]
-            idx = estacoes.index(est_atual) if est_atual in estacoes else -1
-            sentido = getattr(trem, "sentido", 1)
-            prox_idx = idx + sentido
-
-            # Interpolação Geográfica entre Estações
-            if 0 <= prox_idx < len(estacoes):
-                lat1, lon1 = COORDENADAS_ESTACOES[est_atual]
-                lat2, lon2 = COORDENADAS_ESTACOES[estacoes[prox_idx]]
-
-                lat_atual = lat1 + (lat2 - lat1) * self.anim_step
-                lon_atual = lon1 + (lon2 - lon1) * self.anim_step
+            estacoes = linha["estacoes"]
+            idx = estacoes.index(trem.estacao_atual)
+            direcao = 1 if trem.sentido == "ida" else -1
+            proximo = idx + direcao
+            if 0 <= proximo < len(estacoes):
+                lat, lon = self._ponto_no_traco(trem.linha, trem.estacao_atual, estacoes[proximo], trem.progresso / 100)
             else:
-                lat_atual, lon_atual = COORDENADAS_ESTACOES[est_atual]
+                lat, lon = COORDENADAS_ESTACOES[trem.estacao_atual]
 
-            # Atualizar ou Criar Marcador do Trem
-            chave_trem = f"trem_{i}"
-            rotulo = f"🚆 {trem.linha}"
-
-            if chave_trem in self.marcadores_trens:
-                self.marcadores_trens[chave_trem].set_position(lat_atual, lon_atual)
+            chave = f"trem_{i}"
+            if chave in self.marcadores_trens:
+                self.marcadores_trens[chave].set_position(lat, lon)
             else:
-                marcador = self.map_widget.set_marker(lat_atual, lon_atual, text=rotulo)
-                self.marcadores_trens[chave_trem] = marcador
+                self.marcadores_trens[chave] = self.map_widget.set_marker(lat, lon, text=f"🚆 {trem.linha}")
