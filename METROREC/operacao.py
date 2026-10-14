@@ -252,6 +252,18 @@ class GestorOperacional:
             self.ao_atualizar_frota(self.trens, {id})
         return trem
 
+    def remover_trem(self, id):
+        trem = next((t for t in self.trens if t["id"] == id), None)
+        if not trem:
+            raise ValueError("Trem não encontrado.")
+        maquinista = next((m for m in self.maquinistas if m.get("id") == trem.get("maquinista_id")), None)
+        if maquinista:
+            maquinista.update(status="Disponível", trem_id=None)
+        self.trens.remove(trem)
+        self.salvar()
+        if self.ao_atualizar_frota:
+            self.ao_atualizar_frota(self.trens, {id})
+
     def salvar_maquinista(self, nome, matricula="", status="Disponível", trem_id=None, id=None):
         nome = nome.strip() if isinstance(nome, str) else ""
         matricula = matricula.strip() if isinstance(matricula, str) else ""

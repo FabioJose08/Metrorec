@@ -27,6 +27,7 @@ class Trem:
     origem: str = ""
     destino: str = ""
     ultimo_movimento: float = 0.0
+    estacao_inicial: str = ""
 
 
 class SimulacaoTrens:
@@ -61,7 +62,8 @@ class SimulacaoTrens:
             destino = rota[1] if estacao == rota[0] else rota[-2]
             self.trens.append(Trem(indice, linha, estacao, destino,
                                    velocidade=self.velocidade.get(linha, 1), origem=estacao,
-                                   destino=rota[-1] if estacao == rota[0] else rota[0]))
+                                   destino=rota[-1] if estacao == rota[0] else rota[0],
+                                   estacao_inicial=estacao))
 
     def _obter_trem(self, trem_id):
         trem = next((t for t in self.trens if t.id == trem_id), None)
@@ -136,10 +138,13 @@ class SimulacaoTrens:
             trem = atuais.get(registro["id"])
             if trem is None:
                 trem = Trem(registro["id"], linha, estacao, estacao, velocidade=self.velocidade.get(linha, 1),
-                            origem=estacao, destino=rota[-1] if estacao == rota[0] else rota[0])
+                            origem=estacao, destino=rota[-1] if estacao == rota[0] else rota[0],
+                            estacao_inicial=estacao)
             elif trem.status != "Em circulação":
                 trem.linha, trem.estacao_atual = linha, estacao
                 trem.proxima_estacao = estacao
+                if ids_alterados is None or registro["id"] in ids_alterados:
+                    trem.estacao_inicial = estacao
             altered = ids_alterados is None or registro["id"] in ids_alterados
             if altered:
                 status = registro.get("status")
@@ -211,6 +216,13 @@ class SimulacaoTrens:
         self.ultimo_despacho.clear()
         self.proximo_despacho.clear()
         for trem in self.trens:
+            rota = self.linhas[trem.linha]["estacoes"]
+            estacao = trem.estacao_inicial if trem.estacao_inicial in rota else rota[0]
+            trem.estacao_atual = estacao
+            trem.sentido = "ida" if rota.index(estacao) < len(rota) - 1 else "volta"
+            trem.proxima_estacao, _ = self._proxima(trem)
+            trem.origem = estacao
+            trem.destino = rota[-1] if trem.sentido == "ida" else rota[0]
             if trem.id in self._parados_pela_simulacao:
                 trem.status = "Aguardando despacho"
                 self._parados_pela_simulacao.discard(trem.id)

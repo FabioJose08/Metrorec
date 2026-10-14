@@ -860,7 +860,14 @@ class MetroRecApp:
                 return a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
         return trecho[-1]
     def _atualizar_trens_no_mapa(self):
-        for i, trem in enumerate(self.simulacao.trens):
+        ids_ativos = {f"trem_{trem.id}" for trem in self.simulacao.trens}
+        for chave in set(self.marcadores_trens) - ids_ativos:
+            marker = self.marcadores_trens.pop(chave)
+            try:
+                marker.delete()
+            except tk.TclError:
+                pass
+        for trem in self.simulacao.trens:
             linha = self.linhas.get(trem.linha)
             if not linha:
                 continue
@@ -872,7 +879,7 @@ class MetroRecApp:
                 lat, lon = self._ponto_no_traco(trem.linha, trem.estacao_atual, estacoes[proximo], trem.progresso)
             else:
                 lat, lon = COORDENADAS_ESTACOES[trem.estacao_atual]
-            chave = f"trem_{i}"
+            chave = f"trem_{trem.id}"
             if chave in self.marcadores_trens:
                 self.marcadores_trens[chave].set_position(lat, lon)
             else:
