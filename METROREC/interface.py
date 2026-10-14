@@ -105,8 +105,12 @@ class MetroRecApp:
         if caminho_icone.is_file():
             self.icone_janela = tk.PhotoImage(file=str(caminho_icone))
             self.root.iconphoto(True, self.icone_janela)
-        self.root.geometry("1360x820")
-        self.root.minsize(1120, 720)
+        largura = self.root.winfo_screenwidth()
+        altura = self.root.winfo_screenheight()
+        minimo_largura = min(760, max(640, largura - 80))
+        minimo_altura = min(560, max(440, altura - 120))
+        self.root.geometry(f"{max(minimo_largura, min(1360, largura - 40))}x{max(minimo_altura, min(820, altura - 80))}")
+        self.root.minsize(minimo_largura, minimo_altura)
         self.root.configure(bg=C["fundo"])
     def _estilos(self):
         s = ttk.Style()
@@ -123,6 +127,12 @@ class MetroRecApp:
         s.configure("Metro.NavActive.TButton", font=("Segoe UI", 10, "bold"), padding=(13, 9),
                     foreground="white", background=C["azul"], borderwidth=0)
         s.map("Metro.NavActive.TButton", background=[("active", "#064AA3")])
+        s.configure("Metro.NavSmall.TButton", font=("Segoe UI", 9), padding=(5, 7),
+                    foreground=C["texto"], background="#E8F0FA", borderwidth=0)
+        s.map("Metro.NavSmall.TButton", background=[("active", "#D7E6F8")])
+        s.configure("Metro.NavSmallActive.TButton", font=("Segoe UI", 9, "bold"), padding=(5, 7),
+                    foreground="white", background=C["azul"], borderwidth=0)
+        s.map("Metro.NavSmallActive.TButton", background=[("active", "#064AA3")])
         for nome, cor, estilo in [
             ("Jaboatão", CORES_LINHAS["Jaboatão"], "Linha1.TButton"),
             ("Camaragibe", CORES_LINHAS["Camaragibe"], "Linha2.TButton"),
@@ -132,6 +142,9 @@ class MetroRecApp:
                         foreground="white", background=cor, borderwidth=0)
             s.map(estilo, background=[("active", cor)])
     def _limpar(self):
+        self.root.unbind_all("<MouseWheel>")
+        self.root.unbind_all("<Button-4>")
+        self.root.unbind_all("<Button-5>")
         self._guardar_estado_mapa()
         self._limpar_elementos_mapa()
         self.map_widget = None
@@ -194,7 +207,8 @@ class MetroRecApp:
             self._label(linha_marca, "METRO", 26, "white", "bold", C["topo"]).pack(side="left")
             self._label(linha_marca, "REC", 26, "#19A5F8", "bold", C["topo"]).pack(side="left")
             self._label(marca, "Sistema de Mobilidade Integrado", 9, "#D5E5F7", bg=C["topo"]).pack(anchor="w")
-            tk.Frame(self.topo, bg="#496987", width=1, height=58).place(x=350, y=43)
+            divisor_marca = tk.Frame(self.topo, bg="#496987", width=1, height=58)
+            divisor_marca.place(x=350, y=43)
             frase = tk.Frame(self.topo, bg=C["topo"])
             frase.place(x=372, y=47)
             self._label(frase, "Mais mobilidade", 13, "white", "bold", C["topo"]).pack(anchor="w")
@@ -204,8 +218,12 @@ class MetroRecApp:
             banner.bind("<Configure>", lambda e: self._ajustar_imagem(e.widget, self.foto_cabecalho, e.width, e.height))
             logo_cbtu = ImageOps.contain(self.logo_cbtu, (36, 42), method=Image.Resampling.LANCZOS)
             self.imagem_logo_cbtu = ImageTk.PhotoImage(logo_cbtu)
-            tk.Label(self.topo, image=self.imagem_logo_cbtu, bg=C["topo"], bd=0).place(relx=0.85, y=49)
-            tk.Frame(self.topo, bg="#496987", width=1, height=54).place(relx=0.88, y=45)
+            logo_cbtu = tk.Label(self.topo, image=self.imagem_logo_cbtu, bg=C["topo"], bd=0)
+            logo_cbtu.place(relx=0.85, y=49)
+            divisor_cbtu = tk.Frame(self.topo, bg="#496987", width=1, height=54)
+            divisor_cbtu.place(relx=0.88, y=45)
+            self._partes_cabecalho = (marca, divisor_marca, frase, banner, logo_cbtu, divisor_cbtu, relogio)
+            self.topo.bind("<Configure>", self._adaptar_cabecalho)
         else:
             esquerda = tk.Frame(self.topo, bg=C["topo"])
             esquerda.pack(side="left", padx=30, fill="y")
@@ -213,11 +231,79 @@ class MetroRecApp:
             self._label(esquerda, titulo, 9, "#BBD2EB", bg=C["topo"]).pack(anchor="w")
         self.conteudo = tk.Frame(self.root, bg=C["fundo"])
         self.conteudo.pack(fill="both", expand=True)
-        area = tk.Frame(self.conteudo, bg=C["fundo"])
-        area.pack(fill="both", expand=True, padx=32, pady=(16, 16) if destaque else (24, 24))
+        self.pagina_canvas = tk.Canvas(self.conteudo, bg=C["fundo"], highlightthickness=0)
+        self.pagina_scrollbar = ttk.Scrollbar(self.conteudo, orient="vertical", command=self.pagina_canvas.yview)
+        self.pagina_canvas.configure(yscrollcommand=self.pagina_scrollbar.set)
+        self.pagina_scrollbar.pack(side="right", fill="y")
+        self.pagina_canvas.pack(side="left", fill="both", expand=True)
+        area_conteudo = tk.Frame(self.pagina_canvas, bg=C["fundo"])
+        self.pagina_window = self.pagina_canvas.create_window((0, 0), window=area_conteudo, anchor="nw")
+        area_conteudo.bind("<Configure>", lambda _: self.pagina_canvas.configure(
+            scrollregion=self.pagina_canvas.bbox("all")))
+        self.pagina_canvas.bind("<Configure>", lambda e: self.pagina_canvas.itemconfigure(
+            self.pagina_window, width=e.width))
+        self.root.bind_all("<MouseWheel>", self._rolar_pagina)
+        self.root.bind_all("<Button-4>", self._rolar_pagina)
+        self.root.bind_all("<Button-5>", self._rolar_pagina)
+        area = tk.Frame(area_conteudo, bg=C["fundo"])
+        area.pack(fill="both", expand=True, padx=16, pady=(12, 12) if destaque else (16, 16))
         if subtitulo and not destaque:
             self._label(area, subtitulo, 11, C["sec"], bg=C["fundo"]).pack(anchor="w", pady=(0, 16))
         return area
+    def _adaptar_cabecalho(self, evento):
+        if not getattr(self, "_partes_cabecalho", None):
+            return
+        marca, divisor, frase, banner, logo, divisor_cbtu, relogio = self._partes_cabecalho
+        largura = evento.width
+        if largura >= 1120:
+            marca.place_configure(x=108, y=37)
+            divisor.place(x=350, y=43)
+            frase.place(x=372, y=47)
+            banner.place(relx=0.49, y=0, relwidth=0.34, height=145)
+            logo.place(relx=0.85, y=49)
+            divisor_cbtu.place(relx=0.88, y=45)
+            relogio.place(relx=0.89, rely=0.38, anchor="nw")
+            relogio.configure(font=("Segoe UI", 12, "bold"))
+        elif largura >= 840:
+            marca.place(x=24, y=37)
+            divisor.place(x=263, y=43)
+            frase.place_forget()
+            banner.place_forget()
+            logo.place(relx=0.73, y=49)
+            divisor_cbtu.place(relx=0.79, y=45)
+            relogio.place(relx=0.81, rely=0.38, anchor="nw")
+            relogio.configure(font=("Segoe UI", 10, "bold"))
+        else:
+            marca.place(x=16, y=37)
+            divisor.place_forget()
+            frase.place_forget()
+            banner.place_forget()
+            logo.place_forget()
+            divisor_cbtu.place_forget()
+            relogio.place(relx=0.72, rely=0.38, anchor="nw")
+            relogio.configure(font=("Segoe UI", 9, "bold"))
+    def _rolar_pagina(self, evento):
+        if getattr(evento, "num", None) == 4:
+            unidades = -3
+        elif getattr(evento, "num", None) == 5:
+            unidades = 3
+        else:
+            unidades = -int(evento.delta / 120) or (-1 if evento.delta > 0 else 1)
+        widget = evento.widget
+        canvas_interno = None
+        while widget and widget is not self.pagina_canvas:
+            if widget is self.map_widget or isinstance(widget, (tk.Text, ttk.Treeview)):
+                return
+            if isinstance(widget, tk.Canvas):
+                canvas_interno = widget
+            widget = getattr(widget, "master", None)
+        if widget is not self.pagina_canvas:
+            return
+        if canvas_interno:
+            canvas_interno.yview_scroll(unidades, "units")
+            return "break"
+        self.pagina_canvas.yview_scroll(unidades, "units")
+        return "break"
     def _ajustar_imagem(self, widget, imagem, largura, altura):
         if largura < 1 or altura < 1:
             return
@@ -234,14 +320,27 @@ class MetroRecApp:
             ("▣  Linhas", "Linhas", self.tela_todas_linhas),
             ("⌖  Planejar Rota", "Planejar Rota", self.janela_planejamento_global),
         ]
+        botoes_criados = []
         for texto, chave, comando in botoes:
             estilo = "Metro.NavActive.TButton" if chave == ativo else "Metro.Nav.TButton"
-            self._botao(barra, texto, comando, estilo).pack(side="left", padx=(0, 9), ipady=1)
+            botao = self._botao(barra, texto, comando, estilo)
+            botao.pack(side="left", padx=(0, 6), ipady=1)
+            botoes_criados.append((botao, texto, chave == ativo))
+        compactos = ("Início", "Mapa", "Painel", "Linhas", "Planejar")
+        def adaptar(evento):
+            pequeno = evento.width < 980
+            for (botao, texto, selecionado), compacto in zip(botoes_criados, compactos):
+                botao.configure(text=compacto if pequeno else texto,
+                                style=("Metro.NavSmallActive.TButton" if selecionado else "Metro.NavSmall.TButton")
+                                if pequeno else ("Metro.NavActive.TButton" if selecionado else "Metro.Nav.TButton"))
+        barra.bind("<Configure>", adaptar)
     def _janela_nova(self, titulo, largura, altura):
         w = tk.Toplevel(self.root)
         w.title(f"METROREC - {titulo}")
+        largura = min(largura, self.root.winfo_screenwidth() - 60)
+        altura = min(altura, self.root.winfo_screenheight() - 100)
         w.geometry(f"{largura}x{altura}")
-        w.minsize(400, 300)
+        w.minsize(min(400, largura), min(300, altura))
         w.configure(bg=C["fundo"])
         w.transient(self.root)
         w.grab_set()
@@ -328,6 +427,16 @@ class MetroRecApp:
         estilos = {"Jaboatão": "Linha1.TButton", "Camaragibe": "Linha2.TButton", "Sul": "Linha3.TButton"}
         self._botao(corpo, "➜  Ver detalhes da linha  ›", lambda n=nome: self.tela_linha(n),
                     estilos.get(nome, "Metro.TButton")).pack(fill="x", ipady=2)
+    def _adaptar_cartoes_inicio(self, evento, quadro):
+        compacto = evento.width < 1000
+        modo = "vertical" if compacto else "horizontal"
+        if getattr(quadro, "_modo_cartoes", None) == modo:
+            return
+        quadro._modo_cartoes = modo
+        for cartao in quadro.winfo_children():
+            cartao.pack_forget()
+            cartao.pack(side="top" if compacto else "left", fill="x" if compacto else "both",
+                        expand=not compacto, padx=8, pady=8 if compacto else 2)
     def _enquadrar_foto_linha(self, widget, largura, altura, nome):
         if largura < 1 or altura < 1:
             return
@@ -352,6 +461,7 @@ class MetroRecApp:
         cards.pack(fill="both", expand=True)
         for nome, linha in self.linhas.items():
             self._cartao_linha(cards, nome, linha)
+        cards.bind("<Configure>", lambda evento: self._adaptar_cartoes_inicio(evento, cards))
         rodape = tk.Frame(area, bg=C["fundo"])
         rodape.pack(fill="x", pady=(14, 0))
         self._botao(rodape, "⚙  Painel de Administração", self.tela_admin,

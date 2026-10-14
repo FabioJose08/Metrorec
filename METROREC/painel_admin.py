@@ -26,14 +26,20 @@ class PainelAdministracao(tk.Frame):
 
     @staticmethod
     def _tabela(parent, colunas, larguras):
-        tabela = ttk.Treeview(parent, columns=colunas, show="headings", height=9)
+        quadro = ttk.Frame(parent)
+        quadro.pack(fill="both", expand=True)
+        tabela = ttk.Treeview(quadro, columns=colunas, show="headings", height=9)
         for nome, largura in zip(colunas, larguras):
             tabela.heading(nome, text=nome.capitalize())
-            tabela.column(nome, width=largura, anchor="w")
-        barra = ttk.Scrollbar(parent, orient="vertical", command=tabela.yview)
-        tabela.configure(yscrollcommand=barra.set)
-        tabela.pack(side="left", fill="both", expand=True)
-        barra.pack(side="right", fill="y")
+            tabela.column(nome, width=largura, minwidth=45, anchor="w", stretch=False)
+        barra_y = ttk.Scrollbar(quadro, orient="vertical", command=tabela.yview)
+        barra_x = ttk.Scrollbar(quadro, orient="horizontal", command=tabela.xview)
+        tabela.configure(yscrollcommand=barra_y.set, xscrollcommand=barra_x.set)
+        tabela.grid(row=0, column=0, sticky="nsew")
+        barra_y.grid(row=0, column=1, sticky="ns")
+        barra_x.grid(row=1, column=0, sticky="ew")
+        quadro.rowconfigure(0, weight=1)
+        quadro.columnconfigure(0, weight=1)
         return tabela
 
     @staticmethod
