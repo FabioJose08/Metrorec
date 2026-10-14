@@ -1,0 +1,73 @@
+{
+  "tarifa": 4.25,
+  "linhas": {
+    "Jaboatão": {
+      "status": "Operação normal",
+      "intervalo": 20
+    },
+    "Camaragibe": {
+      "status": "Operação normal",
+      "intervalo": 20
+    },
+    "Sul": {
+      "status": "Operação normal",
+      "intervalo": 20
+    }
+  },
+  "trens": [
+    {
+      "id": 1,
+      "linha": "Jaboatão",
+      "estacao": "Jaboatão",
+      "status": "Parado",
+      "maquinista_id": 1
+    },
+    {
+      "id": 2,
+      "linha": "Camaragibe",
+      "estacao": "Camaragibe",
+      "status": "Aguardando despacho",
+      "maquinista_id": 2
+    },
+    {
+      "id": 3,
+      "linha": "Sul",
+      "estacao": "Cajueiro Seco",
+      "status": "Parado",
+      "maquinista_id": 3
+    }
+  ],
+  "maquinistas": [
+    {
+      "id": 1,
+      "nome": "fabio",
+      "matricula": "",
+      "status": "Em serviço",
+      "trem_id": 1
+    },
+    {
+      "id": 2,
+      "nome": "beto",
+      "matricula": "",
+      "status": "Em serviço",
+      "trem_id": 2
+    },
+    {
+      "id": 3,
+      "nome": "th",
+      "matricula": "",
+      "status": "Em serviço",
+      "trem_id": 3
+    }
+  ],
+  "ocorrencias": [
+    {
+      "id": 1,
+      "data": "13/10/2026 19:36",
+      "linha": "Jaboatão",
+      "tipo": "Energia",
+      "descricao": "energia caiu",
+      "status": "Aberta"
+    }
+  ]
+}

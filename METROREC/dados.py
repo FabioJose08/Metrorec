@@ -1,8 +1,10 @@
+TARIFA_PADRAO = 4.25  # valor acadêmico inicial, centralizado para toda a rede
+
 LINHAS = {
     "Jaboatão": {
         "codigo": "L1",
         "status": "Operação normal",
-        "tarifa": 4.25,
+        "tarifa": TARIFA_PADRAO,
         "intervalo": 20,
         "estacoes": [
             "Jaboatão",
@@ -34,7 +36,7 @@ LINHAS = {
     "Camaragibe": {
         "codigo": "L2",
         "status": "Operação normal",
-        "tarifa": 4.25,
+        "tarifa": TARIFA_PADRAO,
         "intervalo": 20,
         "estacoes": [
             "Camaragibe",
@@ -67,7 +69,7 @@ LINHAS = {
     "Sul": {
         "codigo": "L3",
         "status": "Operação normal",
-        "tarifa": 4.25,
+        "tarifa": TARIFA_PADRAO,
         "intervalo": 20,
         "estacoes": [
            "Cajueiro Seco",
@@ -98,9 +100,8 @@ LINHAS = {
 
 STATUS_DISPONIVEIS = [
     "Operação normal",
-    "Atenção",
-    "Operação reduzida",
-    "Interrompida",
+    "Operação com restrições",
+    "Indisponível",
 ]
 
 CONEXOES = ["Recife", "Joana Bezerra"]
