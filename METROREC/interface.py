@@ -238,10 +238,13 @@ class MetroRecApp:
         self.pagina_canvas.pack(side="left", fill="both", expand=True)
         area_conteudo = tk.Frame(self.pagina_canvas, bg=C["fundo"])
         self.pagina_window = self.pagina_canvas.create_window((0, 0), window=area_conteudo, anchor="nw")
-        area_conteudo.bind("<Configure>", lambda _: self.pagina_canvas.configure(
-            scrollregion=self.pagina_canvas.bbox("all")))
-        self.pagina_canvas.bind("<Configure>", lambda e: self.pagina_canvas.itemconfigure(
-            self.pagina_window, width=e.width))
+        def ajustar_area(_evento=None):
+            altura = max(self.pagina_canvas.winfo_height(), area_conteudo.winfo_reqheight())
+            self.pagina_canvas.itemconfigure(self.pagina_window,
+                                             width=self.pagina_canvas.winfo_width(), height=altura)
+            self.pagina_canvas.configure(scrollregion=self.pagina_canvas.bbox("all"))
+        area_conteudo.bind("<Configure>", ajustar_area)
+        self.pagina_canvas.bind("<Configure>", ajustar_area)
         self.root.bind_all("<MouseWheel>", self._rolar_pagina)
         self.root.bind_all("<Button-4>", self._rolar_pagina)
         self.root.bind_all("<Button-5>", self._rolar_pagina)
@@ -785,6 +788,9 @@ class MetroRecApp:
     def _ajustar_mapa(self, mapa=None):
         mapa = mapa or self.map_widget
         if mapa is not self.map_widget or self.estado_mapa is not None or not self._mapa_existe(mapa):
+            return
+        if mapa.winfo_width() < 320 or mapa.winfo_height() < 260:
+            mapa.after(150, lambda: self._ajustar_mapa(mapa))
             return
         lats, lons = zip(*COORDENADAS_ESTACOES.values())
         self.map_widget.fit_bounding_box((max(lats) + .008, min(lons) - .008),
