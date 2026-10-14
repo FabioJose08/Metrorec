@@ -190,6 +190,7 @@ class PainelAdministracao(tk.Frame):
         barra.pack(fill="x")
         self._botao(barra, "Adicionar trem", self._novo_trem)
         self._botao(barra, "Editar trem selecionado", self._editar_trem)
+        self._botao(barra, "Remover trem selecionado", self._remover_trem)
         quadro = ttk.Frame(self.frota)
         quadro.pack(fill="both", expand=True)
         self.tabela_frota = self._tabela(quadro, ("trem", "linha", "estação", "status", "maquinista"),
@@ -212,6 +213,19 @@ class PainelAdministracao(tk.Frame):
             return
         trem = next(t for t in self.gestor.trens if t["id"] == int(valores[0]))
         self._form_trem(trem)
+
+    def _remover_trem(self):
+        valores = self._selecionado(self.tabela_frota)
+        if not valores:
+            messagebox.showwarning("Frota", "Selecione um trem.", parent=self)
+            return
+        if not messagebox.askyesno("Remover trem", "Confirma a remoção deste trem da frota?", parent=self):
+            return
+        try:
+            self.gestor.remover_trem(int(valores[0]))
+            self._atualizar_tudo()
+        except (ValueError, OSError) as erro:
+            messagebox.showerror("Não foi possível remover", str(erro), parent=self)
 
     def _form_trem(self, registro=None):
         janela = tk.Toplevel(self.app.root)
