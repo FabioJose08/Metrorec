@@ -8,7 +8,7 @@ import webbrowser
 from pathlib import Path
 from urllib.parse import quote, urlencode
 from tkinter import ttk, messagebox
-import tkintermapview
+from map_tiles import MetroRecMapView
 from PIL import Image, ImageOps, ImageTk
 from dados import LINHAS
 from simulacao import SimulacaoTrens
@@ -637,15 +637,38 @@ class MetroRecApp:
                          ("⏹ Parar", self.simulacao_parar), ("↻ Reiniciar", self.simulacao_reiniciar)]:
             self._botao(bar, txt, cmd).pack(side="left", padx=(0, 6))
         self._botao(bar, "🛰 Visão Satélite",
-                    lambda: self.map_widget.set_tile_server("https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"),
+                    lambda: self._alterar_base_mapa(
+                        "https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+                        "Imagery © Google",
+                        None,
+                    ),
                     "Metro.Nav.TButton").pack(side="right", padx=(6, 0))
         self._botao(bar, "🗺 Visão Ruas",
-                    lambda: self.map_widget.set_tile_server("https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"),
+                    lambda: self._alterar_base_mapa(
+                        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                        "© OpenStreetMap contributors",
+                        "https://www.openstreetmap.org/copyright",
+                    ),
                     "Metro.Nav.TButton").pack(side="right")
         caixa = tk.Frame(area, bg=C["fundo"])
         caixa.pack(fill="both", expand=True)
-        self.map_widget = tkintermapview.TkinterMapView(caixa, corner_radius=8)
+        self.map_widget = MetroRecMapView(caixa, corner_radius=8)
         self.map_widget.pack(fill="both", expand=True)
+        self.rotulo_atribuicao_mapa = tk.Label(
+            caixa,
+            text="© OpenStreetMap contributors",
+            bg="white",
+            fg=C["texto"],
+            font=("Segoe UI", 8),
+            cursor="hand2",
+            padx=5,
+            pady=2,
+        )
+        self.rotulo_atribuicao_mapa.place(relx=1, rely=1, anchor="se", x=-8, y=-8)
+        self.rotulo_atribuicao_mapa.bind(
+            "<Button-1>",
+            lambda _: webbrowser.open("https://www.openstreetmap.org/copyright"),
+        )
         if self.estado_mapa:
             posicao, zoom = self.estado_mapa
             self.map_widget.set_position(*posicao)
@@ -657,6 +680,18 @@ class MetroRecApp:
         mapa.after_idle(lambda: self._preparar_mapa(mapa))
         if self.estado_mapa is None:
             self.root.after(250, lambda: self._ajustar_mapa(mapa))
+
+    def _alterar_base_mapa(self, servidor, atribuicao, url_atribuicao):
+        if not self._mapa_existe(self.map_widget):
+            return
+        self.map_widget.set_tile_server(servidor)
+        self.rotulo_atribuicao_mapa.configure(text=atribuicao)
+        self.rotulo_atribuicao_mapa.unbind("<Button-1>")
+        if url_atribuicao:
+            self.rotulo_atribuicao_mapa.bind(
+                "<Button-1>",
+                lambda _: webbrowser.open(url_atribuicao),
+            )
     def _preparar_mapa(self, mapa):
         if mapa is not self.map_widget or not self._mapa_existe(mapa):
             return
