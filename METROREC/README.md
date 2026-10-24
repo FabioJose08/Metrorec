@@ -1,4 +1,4 @@
-﻿# METROREC — Sistema de Mobilidade Integrado
+# METROREC — Sistema de Mobilidade Integrado
 
 Aplicativo demonstrativo de mobilidade feito em Python e Tkinter.
 
@@ -26,4 +26,4 @@ Os cards das linhas usam `assets/linha-jaboatao.png`, `assets/linha-camaragibe.p
 
 O painel administrativo permite ajustar tarifa, estado e intervalo de referência das linhas, cadastrar maquinistas, designá-los aos trens, controlar a frota e registrar ou resolver ocorrências. Os dados são locais e não são enviados à CBTU. O planejamento bloqueia linhas indisponíveis e considera a espera estimada pelo intervalo.
 
-O mapa usa `tkintermapview` e serviços GIS online. A simulação e a administração são demonstrativas; não se conectam a despacho, bilhetagem, folha funcional ou sistemas operacionais reais. Tarifas, velocidades, intervalos e tempos são parâmetros acadêmicos, não dados oficiais.
+O mapa usa `tkintermapview` e serviços GIS online. Os tiles do OpenStreetMap são identificados como MetroREC, armazenados em `%LOCALAPPDATA%\MetroREC\map_tiles.sqlite3` conforme os cabeçalhos HTTP e carregados com concorrência limitada e pré-carregamento curto; a atribuição visível no mapa abre a página de direitos autorais do OSM. A simulação e a administração são demonstrativas; não se conectam a despacho, bilhetagem, folha funcional ou sistemas operacionais reais. Tarifas, velocidades, intervalos e tempos são parâmetros acadêmicos, não dados oficiais.
