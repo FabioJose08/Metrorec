@@ -10,7 +10,7 @@ from urllib.parse import quote, urlencode
 from tkinter import ttk, messagebox
 from map_tiles import MetroRecMapView
 from PIL import Image, ImageOps, ImageTk
-from dados import LINHAS
+from dados import COORDENADAS_ESTACOES, LINHAS
 from simulacao import SimulacaoTrens
 from viagens import montar_rota_integrada, proximo_horario
 from utilitarios import formatar_reais, horario_atual, data_atual, minutos_para_texto
@@ -40,24 +40,6 @@ CORES_LINHAS = {
 }
 API_LINHAS = "https://esigportal2.recife.pe.gov.br/arcgis/rest/services/MeioAmbiente/PCR_CBTU_Mobilidade/MapServer/3/query"
 API_ESTACOES = "https://esigportal2.recife.pe.gov.br/arcgis/rest/services/MeioAmbiente/PCR_CBTU_Mobilidade/MapServer/2/query"
-# Fallback usado somente se a API estiver indisponível.
-COORDENADAS_ESTACOES = {
-    "Camaragibe": (-8.0247222, -34.9950000), "Cosme e Damião": (-8.0355556, -34.9888889),
-    "Rodoviária": (-8.0644444, -34.9811111), "Curado": (-8.0758333, -34.9786111),
-    "Alto do Céu": (-8.0847222, -34.9747222), "Coqueiral": (-8.0911111, -34.9647222),
-    "Jaboatão": (-8.1108333, -35.0150000), "Engenho Velho": (-8.1077778, -35.0050000),
-    "Floriano": (-8.1066667, -34.9930556), "Cavaleiro": (-8.0941667, -34.9727778),
-    "Tejipió": (-8.0902778, -34.9563889), "Barro": (-8.0886111, -34.9455556),
-    "Werneck": (-8.0858333, -34.9361111), "Santa Luzia": (-8.0838889, -34.9300000),
-    "Mangueira": (-8.0791667, -34.9211111), "Ipiranga": (-8.0775000, -34.9133333),
-    "Afogados": (-8.0772222, -34.9061111), "Joana Bezerra": (-8.0730556, -34.8952778),
-    "Recife": (-8.0683333, -34.8847222), "Largo da Paz": (-8.0813889, -34.9047222),
-    "Imbiribeira": (-8.0900000, -34.9075000), "Antônio Falcão": (-8.1097222, -34.9088889),
-    "Shopping": (-8.1158333, -34.9102778), "Tancredo Neves": (-8.1219444, -34.9116667),
-    "Aeroporto": (-8.1341667, -34.9144444), "Porta Larga": (-8.1469444, -34.9175000),
-    "Monte dos Guararapes": (-8.1541667, -34.9200000), "Prazeres": (-8.1608333, -34.9266667),
-    "Cajueiro Seco": (-8.1680556, -34.9341667)
-}
 ROTAS_MAPA = {
     "Jaboatão": LINHAS["Jaboatão"]["estacoes"],
     "Camaragibe": LINHAS["Camaragibe"]["estacoes"],
@@ -80,6 +62,16 @@ class MetroRecApp:
         self.icones_estacoes = {}
         self.tracos_api = []
         self.tracos_api_lookup = {}
+        try:
+            arquivo_trilhos = Path(__file__).parent / "assets" / "trilhos_metrorec.json"
+            with arquivo_trilhos.open(encoding="utf-8") as arquivo:
+                dados_trilhos = json.load(arquivo)
+            self.tracos_osm = {
+                nome: [tuple(ponto) for ponto in pontos]
+                for nome, pontos in dados_trilhos.get("routes", {}).items()
+            }
+        except (OSError, ValueError, TypeError):
+            self.tracos_osm = {}
         self.simulacao_timer_id = None
         self.simulacao = SimulacaoTrens(self.linhas)
         self.operacao.ao_atualizar_linha = self.simulacao.atualizar_operacao
@@ -593,8 +585,8 @@ class MetroRecApp:
         resultado.config(state="disabled")
         def calcular():
             o, d = origem.get(), destino.get()
-            if not o or not d or o == d:
-                messagebox.showwarning("Aviso", "Selecione estações válidas e diferentes.")
+            if not o or not d:
+                messagebox.showwarning("Aviso", "Selecione estações válidas.")
                 return
             linha_inicio = None if selecao_linha.get() == "Rede completa" else selecao_linha.get()
             rota = montar_rota_integrada(self.linhas, o, d, linha_inicial=linha_inicio)
@@ -609,8 +601,10 @@ class MetroRecApp:
                     f"Origem: {o}  →  Destino: {d}\n"
                     f"Linhas: {rota.get('linha', selecao_linha.get())}\n"
                     f"Estações percorridas: {rota.get('estacoes')}  |  Integrações: {rota.get('trocas')}\n"
-                    f"Tempo estimado: {rota.get('tempo')} min\n"
+                    f"Tempo dentro do metrô: {rota.get('tempo_percurso', 0)} min\n"
+                    f"Espera inicial (estimativa): {rota.get('espera_inicial', 0)} min\n"
                     f"Tempo de transferência: {rota.get('tempo_transferencia', 0)} min\n"
+                    f"Tempo total estimado: {rota.get('tempo_total_estimado', rota.get('tempo', 0))} min\n"
                     f"Tarifa acadêmica: {formatar_reais(rota.get('tarifa', self.operacao.tarifa))}\n\n"
                     f"Itinerário:\n{detalhe}"
                 )
@@ -629,7 +623,7 @@ class MetroRecApp:
     # MAPA REAL INTERATIVO COM TKINTERMAPVIEW
     # ==============================================================================
     def tela_mapa_rede(self):
-        area = self._cabecalho("Mapa da Rede Metroviária", "Traçado real baseado em dados GIS da Prefeitura/CBTU")
+        area = self._cabecalho("Mapa da Rede Metroviária", "Traçado ferroviário local do OpenStreetMap")
         self._nav(area)
         bar = tk.Frame(area, bg=C["fundo"])
         bar.pack(fill="x", pady=(0, 10))
@@ -751,7 +745,10 @@ class MetroRecApp:
         for f in linhas.get("features", []):
             g = f.get("geometry", {})
             c = g.get("coordinates", [])
-            partes.extend([c] if g.get("type") == "LineString" else c)
+            if g.get("type") == "LineString":
+                partes.append(c)
+            elif g.get("type") == "MultiLineString":
+                partes.extend(c)
         for nome, rota in ROTAS_MAPA.items():
             for origem, destino in zip(rota, rota[1:]):
                 trecho = self._melhor_trecho(origem, destino, partes)
@@ -763,25 +760,32 @@ class MetroRecApp:
             self._atualizar_trens_no_mapa()
     @staticmethod
     def _melhor_trecho(origem, destino, partes):
+        """Escolhe a geometria GIS que liga este par de estações, orientada corretamente."""
         a, b = COORDENADAS_ESTACOES[origem], COORDENADAS_ESTACOES[destino]
         melhor = None
         for parte in partes:
             if len(parte) < 2:
                 continue
-            p = [(float(y), float(x)) for x, y, *resto in parte]
-            ia = min(range(len(p)), key=lambda i: (p[i][0] - a[0]) ** 2 + (p[i][1] - a[1]) ** 2)
-            ib = min(range(len(p)), key=lambda i: (p[i][0] - b[0]) ** 2 + (p[i][1] - b[1]) ** 2)
-            da = (p[ia][0] - a[0]) ** 2 + (p[ia][1] - a[1]) ** 2
-            db = (p[ib][0] - b[0]) ** 2 + (p[ib][1] - b[1]) ** 2
-            if max(da, db) > 0.006 ** 2 or ia == ib:
+            pontos = [(float(y), float(x)) for x, y, *resto in parte]
+            ia = min(range(len(pontos)), key=lambda i: (pontos[i][0] - a[0]) ** 2 + (pontos[i][1] - a[1]) ** 2)
+            ib = min(range(len(pontos)), key=lambda i: (pontos[i][0] - b[0]) ** 2 + (pontos[i][1] - b[1]) ** 2)
+            da = (pontos[ia][0] - a[0]) ** 2 + (pontos[ia][1] - a[1]) ** 2
+            db = (pontos[ib][0] - b[0]) ** 2 + (pontos[ib][1] - b[1]) ** 2
+            # A camada ferroviária usa o eixo da via, enquanto os pontos de
+            # estação podem estar deslocados alguns quarteirões do trilho.
+            # Aceita essa diferença e escolhe a geometria mais próxima do par.
+            if max(da, db) > 0.01 ** 2 or ia == ib:
                 continue
-            trecho = p[ia:ib + 1] if ia < ib else p[ib:ia + 1][::-1]
-            erro = da + db
-            tamanho = sum((y[0] - x[0]) ** 2 + (y[1] - x[1]) ** 2 for x, y in zip(trecho, trecho[1:]))
-            candidato = (erro, tamanho, trecho)
-            if melhor is None or candidato[:2] < melhor[:2]:
-                melhor = candidato
-        return melhor[2] if melhor else None
+            trecho = pontos[ia:ib + 1] if ia < ib else pontos[ib:ia + 1][::-1]
+            comprimento = sum(((p2[0] - p1[0]) ** 2 + (p2[1] - p1[1]) ** 2) ** .5
+                              for p1, p2 in zip(trecho, trecho[1:]))
+            distancia_direta = ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** .5
+            # Distância aos pontos da estação é prioritária; o comprimento impede
+            # selecionar uma volta extensa da linha quando há geometria equivalente.
+            score = da + db + max(0, comprimento - distancia_direta) ** 2 * .02
+            if melhor is None or score < melhor[0]:
+                melhor = (score, trecho)
+        return melhor[1] if melhor else None
     def _icone_estacao(self, cor, integracao=False):
         chave = (cor, integracao)
         if chave in self.icones_estacoes:
@@ -799,13 +803,15 @@ class MetroRecApp:
         if not self._mapa_existe(self.map_widget):
             return
         self._limpar_elementos_mapa()
-        api_pares = self.tracos_api_lookup
-        for nome, rota in ROTAS_MAPA.items():
-            for origem, destino in zip(rota, rota[1:]):
-                a, b = COORDENADAS_ESTACOES[origem], COORDENADAS_ESTACOES[destino]
-                cor = C["sec"] if self.linhas[nome]["status"] in ("Interrompida", "Indisponível") else CORES_LINHAS[nome]
-                caminho = self.map_widget.set_path(api_pares.get((nome, origem, destino), [a, b]), color=cor, width=3)
-                self.tracos_mapa.append(caminho)
+        # Traçados OSM completos e contínuos: não dependem de encontrar um
+        # vértice da via próximo ao ponto central de cada estação.
+        for nome in ("Sul", "Jaboatão", "Camaragibe"):
+            pontos = self.tracos_osm.get(nome)
+            if not pontos or len(pontos) < 2:
+                continue
+            cor = C["sec"] if self.linhas[nome]["status"] in ("Interrompida", "Indisponível") else CORES_LINHAS[nome]
+            caminho = self.map_widget.set_path(pontos, color=cor, width=4)
+            self.tracos_mapa.append(caminho)
         mostradas = set()
         for nome, estacoes in ROTAS_MAPA.items():
             for estacao in estacoes:
@@ -881,6 +887,16 @@ class MetroRecApp:
             trecho = self.tracos_api_lookup.get((linha, destino, origem))
             if trecho:
                 trecho = trecho[::-1]
+        if not trecho:
+            # Usa a geometria local dos trilhos se a API GIS não tiver retornado
+            # o trecho, mantendo o marcador do trem sobre a ferrovia.
+            pontos = self.tracos_osm.get(linha)
+            if pontos:
+                a, b = COORDENADAS_ESTACOES[origem], COORDENADAS_ESTACOES[destino]
+                ia = min(range(len(pontos)), key=lambda i: (pontos[i][0] - a[0]) ** 2 + (pontos[i][1] - a[1]) ** 2)
+                ib = min(range(len(pontos)), key=lambda i: (pontos[i][0] - b[0]) ** 2 + (pontos[i][1] - b[1]) ** 2)
+                if ia != ib:
+                    trecho = pontos[ia:ib + 1] if ia < ib else pontos[ib:ia + 1][::-1]
         if not trecho:
             a, b = COORDENADAS_ESTACOES[origem], COORDENADAS_ESTACOES[destino]
             return a[0] + (b[0] - a[0]) * progresso, a[1] + (b[1] - a[1]) * progresso

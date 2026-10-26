@@ -19,21 +19,21 @@
       "id": 1,
       "linha": "Jaboatão",
       "estacao": "Jaboatão",
-      "status": "Parado",
+      "status": "Em operação",
       "maquinista_id": 1
     },
     {
       "id": 2,
       "linha": "Camaragibe",
       "estacao": "Camaragibe",
-      "status": "Aguardando despacho",
+      "status": "Em operação",
       "maquinista_id": 2
     },
     {
       "id": 3,
       "linha": "Sul",
       "estacao": "Cajueiro Seco",
-      "status": "Parado",
+      "status": "Em operação",
       "maquinista_id": 3
     }
   ],

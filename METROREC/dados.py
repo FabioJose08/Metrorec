@@ -1,5 +1,32 @@
 TARIFA_PADRAO = 4.25  # valor acadêmico inicial, centralizado para toda a rede
 
+# Referências aproximadas de tempo dentro do metrô, sem espera ou transferência.
+# São médias de calibração do planejador, não horários de composições.
+DURACOES_REFERENCIA_LINHAS = {
+    "Jaboatão": 26,
+    "Camaragibe": 28,
+    "Sul": 22,
+}
+
+# Coordenadas de referência para ancorar estações nas geometrias ferroviárias locais.
+COORDENADAS_ESTACOES = {
+    "Camaragibe": (-8.0247222, -34.9950000), "Cosme e Damião": (-8.0355556, -34.9888889),
+    "Rodoviária": (-8.0644444, -34.9811111), "Curado": (-8.0758333, -34.9786111),
+    "Alto do Céu": (-8.0847222, -34.9747222), "Coqueiral": (-8.0911111, -34.9647222),
+    "Jaboatão": (-8.1108333, -35.0150000), "Engenho Velho": (-8.1077778, -35.0050000),
+    "Floriano": (-8.1066667, -34.9930556), "Cavaleiro": (-8.0941667, -34.9727778),
+    "Tejipió": (-8.0902778, -34.9563889), "Barro": (-8.0886111, -34.9455556),
+    "Werneck": (-8.0858333, -34.9361111), "Santa Luzia": (-8.0838889, -34.9300000),
+    "Mangueira": (-8.0791667, -34.9211111), "Ipiranga": (-8.0775000, -34.9133333),
+    "Afogados": (-8.0772222, -34.9061111), "Joana Bezerra": (-8.0730556, -34.8952778),
+    "Recife": (-8.0683333, -34.8847222), "Largo da Paz": (-8.0813889, -34.9047222),
+    "Imbiribeira": (-8.0900000, -34.9075000), "Antônio Falcão": (-8.1097222, -34.9088889),
+    "Shopping": (-8.1158333, -34.9102778), "Tancredo Neves": (-8.1219444, -34.9116667),
+    "Aeroporto": (-8.1341667, -34.9144444), "Porta Larga": (-8.1469444, -34.9175000),
+    "Monte dos Guararapes": (-8.1541667, -34.9200000), "Prazeres": (-8.1608333, -34.9266667),
+    "Cajueiro Seco": (-8.1680556, -34.9341667),
+}
+
 LINHAS = {
     "Jaboatão": {
         "codigo": "L1",
